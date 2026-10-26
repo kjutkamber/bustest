@@ -1,1212 +1,143 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#000000">
-<meta name="description" content="STANICA — live bus departures for Belgrade, Novi Sad and Niš, in the style of the New York City subway. Static, serverless, GitHub Pages ready.">
-<title>STANICA · Live Departures — BG / NS / NI</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='48' fill='%230039A6'/%3E%3Ctext x='50' y='66' font-size='52' font-family='Arial Black,Arial' font-weight='900' fill='white' text-anchor='middle'%3ES%3C/text%3E%3C/svg%3E">
+<html lang="sr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#000"><title>Kad dolazi autobus</title>
 <style>
-/* ============================================================
-   STANICA — NYC Subway style
-   Black / white Helvetica, route bullets, countdown boards.
-   ============================================================ */
+:root{--bg:#000;--fg:#fff;--mut:#9aa0a6;--row:#111;--line:#2a2a2a;--amber:#ffb000}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.3 "Helvetica Neue",Helvetica,Arial,sans-serif}
+.wrap{max-width:640px;margin:0 auto;padding:16px}
+select,input,button{background:var(--row);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:12px;font:inherit}
+button{cursor:pointer}input{flex:1;min-width:0}.bar{display:flex;gap:8px;margin-bottom:8px}
+header{display:flex;justify-content:space-between;align-items:center;padding:6px 0 10px;border-bottom:3px solid var(--fg);margin-bottom:6px;gap:8px}
+h1{font-size:24px;margin:0}small,.mut{color:var(--mut)}
+.card{border-bottom:1px solid var(--line);padding:14px 0;cursor:pointer}
+.card h2{font-size:18px;margin:0 0 8px;display:flex;justify-content:space-between}.card h2 span{color:var(--mut);font-weight:400;font-size:14px}
+.row{display:flex;align-items:center;gap:12px;padding:8px 0}
+.bullet{flex:none;min-width:40px;height:40px;border-radius:20px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;padding:0 8px;color:#fff}
+.dest{flex:1;min-width:0}.dest b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eta{text-align:right;color:var(--amber);font-weight:700;font-size:26px;line-height:1}.eta small{display:block;font-size:12px;font-weight:400;margin-top:3px}
+.big .bullet{min-width:52px;height:52px;border-radius:26px;font-size:22px}.big .eta{font-size:34px}.big .row{padding:14px 0;border-bottom:1px solid var(--line)}
+.msg{color:var(--mut);padding:24px 0;text-align:center}.err{color:#ff6b6b}
+.res{background:var(--row);border:1px solid var(--line);border-radius:8px;margin-bottom:12px;max-height:240px;overflow:auto}
+.res div{padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+.map{position:relative;margin-top:14px;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+.map svg{display:block;width:100%;height:auto;background:#f3efe6}.map svg text{font-family:Helvetica,Arial,sans-serif}
+.zoom{position:absolute;right:8px;top:8px;display:flex;flex-direction:column;gap:6px}.zoom button{padding:6px 12px;background:#fff;color:#000}
+</style></head><body><div class="wrap">
 
-:root {
-  --black: #000;
-  --white: #fff;
-  --gray-1: #111;
-  --gray-2: #222;
-  --gray-3: #444;
-  --gray-mta: #a7a9ac;
-  --amber: #ffb000;
-  --red: #ee352e;
-  --green: #00933c;
-  --blue: #0039a6;
-  --orange: #ff6319;
-  --yellow: #fccc0a;
-  --purple: #b933ad;
-  --lime: #6cbe45;
-  --brown: #996633;
-  --font: "Helvetica Neue", Helvetica, Arial, sans-serif;
-}
+<section id="home"><header><h1>Moje stanice</h1><button id="plus">＋ Dodaj</button></header><div id="cards"></div></section>
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+<section id="add" hidden><header><h1>Dodaj stanicu</h1><button class="back">✕</button></header>
+<div class="bar"><select id="city"></select><input id="q" placeholder="Ime ili broj stanice…" autocomplete="off"><button id="geo">📍</button></div>
+<div id="res" class="res" hidden></div><div class="mut" style="font-size:14px">Ili dodirni stanicu na mapi:</div><div class="map"><svg id="amap" viewBox="0 0 640 440"></svg><div class="zoom"><button data-z="0.6">＋</button><button data-z="1.6">－</button></div></div></section>
 
-html { -webkit-text-size-adjust: 100%; }
-
-body {
-  background: var(--black);
-  color: var(--white);
-  font-family: var(--font);
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-a { color: inherit; }
-
-/* ---------- mosaic tile strip ---------- */
-.mosaic {
-  height: 14px;
-  background-image: linear-gradient(90deg,
-    var(--red) 0 14px, var(--yellow) 14px 28px, var(--green) 28px 42px,
-    var(--blue) 42px 56px, var(--orange) 56px 70px, var(--purple) 70px 84px,
-    var(--lime) 84px 98px, var(--brown) 98px 112px, var(--gray-mta) 112px 126px);
-  background-size: 126px 14px;
-}
-.mosaic-thin { height: 8px; background-size: 126px 8px; opacity: .85; }
-
-/* ---------- top bar ---------- */
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 18px;
-  background: var(--black);
-  flex-wrap: wrap;
-}
-
-.brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
-
-.brand-bullets { display: flex; gap: 4px; }
-
-.brand-word {
-  font-weight: 800;
-  font-size: 1.5rem;
-  letter-spacing: .06em;
-  line-height: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.brand-sub {
-  font-size: .58rem;
-  font-weight: 700;
-  letter-spacing: .22em;
-  color: var(--gray-mta);
-}
-
-.topnav { display: flex; gap: 8px; }
-
-.nav-btn {
-  background: var(--black);
-  color: var(--white);
-  border: 2px solid var(--white);
-  font-family: var(--font);
-  font-weight: 800;
-  font-size: .78rem;
-  letter-spacing: .08em;
-  padding: 8px 12px;
-  cursor: pointer;
-  transition: background .12s, color .12s;
-}
-.nav-btn:hover { background: var(--white); color: var(--black); }
-.nav-btn.active { background: var(--amber); border-color: var(--amber); color: var(--black); }
-
-/* ---------- route bullets ---------- */
-.bullet {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  min-width: 34px;
-  border-radius: 50%;
-  color: var(--white);
-  font-weight: 800;
-  font-size: .95rem;
-  letter-spacing: 0;
-  line-height: 1;
-  font-family: var(--font);
-  border: none;
-  user-select: none;
-}
-.bullet.bullet-s { background: var(--blue); }
-.bullet.bullet-t { background: var(--red); }
-.bullet.bullet-a { background: var(--orange); }
-.bullet.text-dark { color: var(--black); }
-
-/* ---------- layout ---------- */
-.app {
-  flex: 1;
-  width: 100%;
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 26px 16px 48px;
-}
-
-.loading-sign {
-  border: 3px solid var(--white);
-  padding: 22px;
-  text-align: center;
-  font-weight: 800;
-  letter-spacing: .3em;
-  animation: blink 1.1s steps(2) infinite;
-}
-@keyframes blink { 50% { opacity: .35; } }
-
-/* ---------- headings / plaques ---------- */
-.view-title {
-  font-size: 1.05rem;
-  font-weight: 800;
-  letter-spacing: .18em;
-  color: var(--gray-mta);
-  margin: 6px 2px 16px;
-  text-transform: uppercase;
-}
-
-/* White enamel station plaque, MTA wall-sign style */
-.plaque {
-  background: var(--white);
-  color: var(--black);
-  border: 3px solid var(--black);
-  outline: 3px solid var(--white);
-  padding: 12px 18px;
-  margin: 0 3px 22px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.plaque h1, .plaque h2 {
-  font-weight: 800;
-  font-size: 1.25rem;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-  flex: 1;
-  line-height: 1.15;
-}
-.plaque .plaque-sub {
-  display: block;
-  font-size: .68rem;
-  letter-spacing: .2em;
-  color: var(--gray-3);
-  margin-top: 3px;
-}
-
-/* ---------- city picker (service tiles) ---------- */
-.city-grid { display: flex; flex-direction: column; gap: 14px; }
-
-.city-tile {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  background: var(--gray-1);
-  border: 3px solid var(--gray-3);
-  padding: 20px 18px;
-  text-decoration: none;
-  transition: border-color .12s, background .12s, transform .12s;
-}
-.city-tile:hover { border-color: var(--white); background: var(--gray-2); transform: translateX(4px); }
-.city-tile .city-name {
-  font-size: 1.45rem;
-  font-weight: 800;
-  letter-spacing: .05em;
-  text-transform: uppercase;
-}
-.city-tile .city-hint { font-size: .75rem; color: var(--gray-mta); letter-spacing: .14em; margin-top: 4px; }
-.city-tile .city-arrow { margin-left: auto; font-size: 1.6rem; font-weight: 800; }
-
-.fav-strip { margin-top: 26px; }
-
-/* ---------- search ---------- */
-.search-wrap { margin-bottom: 14px; }
-.search-input {
-  width: 100%;
-  background: var(--white);
-  color: var(--black);
-  border: 3px solid var(--white);
-  font-family: var(--font);
-  font-weight: 700;
-  font-size: 1.05rem;
-  padding: 13px 16px;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-}
-.search-input::placeholder { color: var(--gray-3); }
-.search-input:focus { outline: 3px solid var(--amber); outline-offset: 2px; }
-
-/* ---------- station list ---------- */
-.station-list { list-style: none; border-top: 2px solid var(--gray-3); }
-
-.station-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 13px 6px;
-  border-bottom: 2px solid var(--gray-3);
-  cursor: pointer;
-  transition: background .1s, padding-left .1s;
-}
-.station-row:hover { background: var(--gray-1); padding-left: 12px; }
-
-/* station dot, like a stop on a line map */
-.station-dot {
-  width: 16px;
-  height: 16px;
-  min-width: 16px;
-  border-radius: 50%;
-  border: 3px solid var(--white);
-  background: var(--black);
-  position: relative;
-}
-.station-dot::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 100%;
-  width: 3px;
-  height: 999px;
-  background: var(--white);
-  transform: translateX(-50%);
-  opacity: .18;
-}
-
-.station-name { font-weight: 700; font-size: 1.02rem; letter-spacing: .02em; line-height: 1.2; }
-.station-meta { font-size: .72rem; color: var(--gray-mta); letter-spacing: .12em; margin-top: 2px; }
-
-.station-fav {
-  margin-left: auto;
-  background: none;
-  border: none;
-  color: var(--gray-3);
-  font-size: 1.25rem;
-  cursor: pointer;
-  padding: 4px 6px;
-  line-height: 1;
-}
-.station-fav.on { color: var(--yellow); }
-.station-fav:hover { transform: scale(1.2); }
-
-.station-go { color: var(--gray-mta); font-weight: 800; padding-right: 4px; }
-
-.empty-note {
-  border: 2px dashed var(--gray-3);
-  padding: 26px 18px;
-  text-align: center;
-  color: var(--gray-mta);
-  font-weight: 700;
-  letter-spacing: .12em;
-  line-height: 1.7;
-}
-
-/* ---------- departures board (countdown clock) ---------- */
-.board {
-  background: var(--black);
-  border: 3px solid var(--gray-3);
-  padding: 6px 0 0;
-}
-
-.board-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  border-bottom: 3px solid var(--gray-3);
-  flex-wrap: wrap;
-}
-.board-head .board-title { font-weight: 800; letter-spacing: .2em; font-size: .82rem; color: var(--amber); }
-.board-clock { font-family: "Courier New", monospace; font-weight: 700; font-size: .82rem; color: var(--gray-mta); letter-spacing: .1em; }
-
-.dep-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
-  border-bottom: 2px solid var(--gray-2);
-}
-.dep-row:last-child { border-bottom: none; }
-
-.dep-info { flex: 1; min-width: 0; }
-.dep-line-name {
-  font-weight: 800;
-  font-size: 1rem;
-  letter-spacing: .03em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.dep-detail {
-  font-size: .72rem;
-  color: var(--gray-mta);
-  letter-spacing: .08em;
-  margin-top: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.dep-etas { display: flex; align-items: baseline; gap: 12px; }
-
-.dep-eta-main {
-  font-family: "Courier New", monospace;
-  font-weight: 700;
-  color: var(--amber);
-  font-size: 1.5rem;
-  letter-spacing: .04em;
-  white-space: nowrap;
-}
-.dep-eta-main.arriving { color: var(--lime); animation: blink 1s steps(2) infinite; }
-
-.dep-eta-next {
-  font-family: "Courier New", monospace;
-  font-size: .8rem;
-  color: var(--gray-mta);
-  white-space: nowrap;
-}
-
-.board-empty { padding: 30px 16px; text-align: center; color: var(--gray-mta); font-weight: 700; letter-spacing: .15em; line-height: 2; }
-
-/* ---------- buttons ---------- */
-.btn {
-  font-family: var(--font);
-  font-weight: 800;
-  letter-spacing: .1em;
-  font-size: .85rem;
-  padding: 12px 20px;
-  border: 3px solid var(--white);
-  background: var(--white);
-  color: var(--black);
-  cursor: pointer;
-  transition: opacity .12s;
-}
-.btn:hover { opacity: .82; }
-.btn-secondary { background: var(--black); color: var(--white); }
-.btn-block { width: 100%; margin-top: 16px; }
-
-.board-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
-.board-actions .btn { flex: 1; min-width: 140px; }
-
-/* ---------- error / notice ---------- */
-.notice {
-  border: 3px solid var(--red);
-  color: var(--white);
-  padding: 18px;
-  line-height: 1.7;
-  font-weight: 700;
-  letter-spacing: .03em;
-  margin-bottom: 18px;
-}
-.notice strong { color: var(--red); letter-spacing: .15em; }
-.notice code { color: var(--amber); font-size: .85em; word-break: break-all; }
-
-/* ---------- footer ---------- */
-.footer {
-  background: var(--black);
-  padding: 0 0 26px;
-  font-size: .72rem;
-  color: var(--gray-mta);
-  line-height: 1.8;
-  letter-spacing: .04em;
-}
-.footer p { max-width: 760px; margin: 14px auto 0; padding: 0 16px; }
-.footer a { color: var(--white); font-weight: 700; }
-.footer-fine { opacity: .7; }
-
-/* ---------- modal ---------- */
-.modal {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.82);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 18px;
-  z-index: 50;
-}
-.modal.hidden, .toast.hidden, .hidden { display: none; }
-
-.modal-card {
-  background: var(--black);
-  border: 3px solid var(--white);
-  max-width: 520px;
-  width: 100%;
-  padding: 22px;
-}
-.modal-card .plaque { margin: 0 0 16px; }
-.modal-text { font-size: .82rem; line-height: 1.7; color: var(--gray-mta); margin-bottom: 14px; }
-.modal-text code { color: var(--amber); }
-.modal-label { display: block; font-size: .7rem; font-weight: 800; letter-spacing: .18em; color: var(--gray-mta); margin-bottom: 6px; }
-.modal-card input {
-  width: 100%;
-  background: var(--gray-1);
-  border: 2px solid var(--gray-3);
-  color: var(--white);
-  font-family: "Courier New", monospace;
-  padding: 10px 12px;
-  font-size: .85rem;
-}
-.modal-card input:focus { outline: 2px solid var(--amber); }
-.modal-actions { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
-.modal-actions .btn { flex: 1; }
-
-/* ---------- toast ---------- */
-.toast {
-  position: fixed;
-  left: 50%;
-  bottom: 26px;
-  transform: translateX(-50%);
-  background: var(--white);
-  color: var(--black);
-  font-weight: 800;
-  letter-spacing: .08em;
-  font-size: .8rem;
-  padding: 12px 20px;
-  border: 3px solid var(--black);
-  z-index: 60;
-  max-width: 90vw;
-  text-align: center;
-}
-
-/* ---------- responsive ---------- */
-@media (max-width: 520px) {
-  .brand-word { font-size: 1.15rem; }
-  .app { padding: 18px 10px 40px; }
-  .dep-eta-main { font-size: 1.2rem; }
-  .plaque h1, .plaque h2 { font-size: 1rem; }
-  .city-tile .city-name { font-size: 1.15rem; }
-}
-
-</style>
-</head>
-<body>
-
-<div class="mosaic" aria-hidden="true"></div>
-
-<header class="topbar">
-  <a class="brand" href="#/">
-    <span class="brand-bullets" aria-hidden="true">
-      <span class="bullet bullet-s">S</span><span class="bullet bullet-t">T</span><span class="bullet bullet-a">A</span>
-    </span>
-    <span class="brand-word">STANICA<span class="brand-sub">LIVE DEPARTURES · BEOGRAD — NOVI SAD — NIŠ</span></span>
-  </a>
-  <nav class="topnav">
-    <button id="btn-geo" class="nav-btn" title="Use my location to sort nearby stations">◎ NEAR ME</button>
-    <button id="btn-settings" class="nav-btn" title="Connection settings">⚙</button>
-  </nav>
-</header>
-
-<div class="mosaic" aria-hidden="true"></div>
-
-<main id="app" class="app" aria-live="polite">
-  <div class="loading-sign">LOADING…</div>
-</main>
-
-<footer class="footer">
-  <div class="mosaic mosaic-thin" aria-hidden="true"></div>
-  <p>
-    STANICA is an <strong>unofficial</strong> hobby front-end. Live data comes straight from the public
-    BusLogic / NSmart endpoints used by the official carrier apps — no bgpp.misa.st backend involved.
-    Not affiliated with GSP Beograd, JGSP Novi Sad, JGPNiš or the MTA. Be nice to the APIs:
-    arrivals refresh automatically every 20&nbsp;s.
-  </p>
-  <p class="footer-fine">
-    Reverse-engineering write-ups:
-    <a href="https://github.com/FmasterofU/NSmart-RE" rel="noopener">NSmart-RE</a> ·
-    inspired by <a href="https://github.com/MikMik1011/bgpp" rel="noopener">BG++</a>.
-    Style homage to the NYC Subway.
-  </p>
-</footer>
-
-<!-- Settings modal -->
-<div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-  <div class="modal-card">
-    <div class="plaque"><h2 id="modal-title">CONNECTION SETTINGS</h2></div>
-    <p class="modal-text">
-      Leave this <strong>empty</strong> and the app will connect directly first, then automatically
-      fall back to a CORS relay (<code>https://corsproxy.io/?url=</code>) if the carrier blocks the
-      browser. Only paste a proxy prefix here if you want to force a specific one.
-    </p>
-    <label class="modal-label" for="proxy-input">CORS PROXY PREFIX (OPTIONAL)</label>
-    <input id="proxy-input" type="url" spellcheck="false" placeholder="leave empty — auto mode">
-    <div class="modal-actions">
-      <button id="btn-clear-cache" class="btn btn-secondary">CLEAR CACHED STATIONS</button>
-      <button id="btn-close-modal" class="btn btn-primary">DONE</button>
-    </div>
-  </div>
+<section id="detail" hidden><header><button class="back">←</button><h1 id="dname" style="flex:1"></h1><button id="del">🗑</button></header>
+<div id="dlist" class="big"></div><div class="map"><svg id="dmap" viewBox="0 0 640 440"></svg><div class="zoom"><button data-z="0.6">＋</button><button data-z="1.6">－</button></div></div><p class="mut" style="font-size:12px">Mapa prikazuje stanice i trenutne pozicije vozila (ne i trasu linije).</p></section>
 </div>
-
-<div id="toast" class="toast hidden"></div>
-
 <script>
-/* ============================================================
-   STANICA — serverless live departures for BG / NS / NI.
-   Talks directly to the upstream BusLogic / NSmart endpoints
-   (reverse-engineered in github.com/FmasterofU/NSmart-RE,
-   same upstreams used by github.com/MikMik1011/bgpp).
-   Belgrade's V2 API uses AES-256-CBC, done in-browser via
-   WebCrypto — no backend needed.
-   ============================================================ */
-'use strict';
+const API='https://nycbus.stevan-gajinov5.workers.dev'; // za telefon/GitHub Pages: ovde stavi adresu Workera, npr. 'https://bus.ime.workers.dev'
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const COLORS=['#0039a6','#ff6319','#6cbe45','#b933ad','#ee352e','#00933c','#00add0','#996633','#6d6e71'];
+const color=n=>{let h=0;for(const ch of String(n))h=(h*31+ch.charCodeAt(0))%997;return COLORS[h%COLORS.length]};
+const fmt=s=>s<60?'sad':Math.round(s/60)+' min';
+const api=async p=>{const r=await fetch(API+p);const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j};
+const ST={};const stations=async c=>ST[c]||(ST[c]=await api('/api/stations?city='+c));
+let favs=[];try{favs=JSON.parse(localStorage.favs||'[]')}catch{}
+const save=()=>localStorage.favs=JSON.stringify(favs);
+let cur=null,timer,mult=1,mapState={},bodies=[];
 
-/* ---------- city / upstream configuration ---------- */
-
-const CITIES = {
-  bg: {
-    name: 'Beograd',
-    bullet: { text: 'BG', color: '#EE352E' },
-    hint: 'GSP / BG Naplata · V2 encrypted API',
-    base: 'https://announcement-bgnaplata.ticketing.rs',
-    apiKey: '1688dc355af72ef09287',
-    version: 2,
-    encKey: '3+Lhz8XaOli6bHIoYPGuq9Y8SZxEjX6eN7AFPZuLCLs=',
-    encIV: 'IvUScqUudyxBTBU9ZCyjow==',
-    center: [44.81255, 20.46145],
-  },
-  ns: {
-    name: 'Novi Sad',
-    bullet: { text: 'NS', color: '#0039A6' },
-    hint: 'JGSP Novi Sad · NSmart API',
-    base: 'https://online.nsmart.rs',
-    apiKey: '4670f468049bbee2260',
-    version: 1,
-    center: [45.267136, 19.833549],
-  },
-  ni: {
-    name: 'Niš',
-    bullet: { text: 'NI', color: '#FF6319' },
-    hint: 'JGPNiš · NSmart API',
-    base: 'https://online.jgpnis.rs',
-    apiKey: 'cddfd29e495b4851965d',
-    version: 1,
-    center: [43.3209, 21.8958],
-  },
-};
-
-/* MTA-ish palette, used to give every line a stable route-bullet color */
-const LINE_PALETTE = [
-  '#EE352E', '#00933C', '#0039A6', '#FF6319',
-  '#B933AD', '#6CBE45', '#996633', '#FCCC0A',
-];
-
-const REFRESH_SECONDS = 20;
-const STATIONS_CACHE_TTL = 24 * 60 * 60 * 1000; // 1 day
-
-/* ---------- tiny DOM + storage helpers ---------- */
-
-const $ = (sel) => document.querySelector(sel);
-const app = $('#app');
-
-function el(tag, className, text) {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
+function go(v,f){
+  cur=f||null;mult=1;clearInterval(timer);
+  ['home','add','detail'].forEach(x=>$(x).hidden=x!=v);
+  if(v=='home'){buildHome();timer=setInterval(refreshHome,15000)}
+  if(v=='detail'){$('dname').textContent=f.name;refreshDetail();timer=setInterval(refreshDetail,15000)}
+  if(v=='add')startAdd();
 }
+document.querySelectorAll('.back').forEach(b=>b.onclick=()=>go('home'));
+$('plus').onclick=()=>go('add');
+$('del').onclick=()=>{if(confirm('Ukloni stanicu?')){favs=favs.filter(f=>!(f.city==cur.city&&f.uid==cur.uid));save();go('home')}};
 
-function bullet(text, color) {
-  const b = el('span', 'bullet', text);
-  b.style.background = color;
-  if (color.toUpperCase() === '#FCCC0A') b.classList.add('text-dark');
-  b.title = 'Line ' + text;
-  return b;
-}
-
-function lineColor(lineNumber) {
-  let hash = 0;
-  const s = String(lineNumber);
-  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
-  return LINE_PALETTE[hash % LINE_PALETTE.length];
-}
-
-function toast(msg, ms = 2600) {
-  const t = $('#toast');
-  t.textContent = msg;
-  t.classList.remove('hidden');
-  clearTimeout(toast._t);
-  toast._t = setTimeout(() => t.classList.add('hidden'), ms);
-}
-
-const store = {
-  get(key, fallback) {
-    try {
-      const raw = localStorage.getItem('stanica:' + key);
-      return raw === null ? fallback : JSON.parse(raw);
-    } catch { return fallback; }
-  },
-  set(key, value) {
-    try { localStorage.setItem('stanica:' + key, JSON.stringify(value)); } catch {}
-  },
-};
-
-const settings = Object.assign({ proxy: '' }, store.get('settings', {}));
-const favorites = store.get('favorites', {}); // { cityId: [stationKey, ...] }
-let geoPos = store.get('geopos', null); // { lat, lon }
-
-/* ---------- networking ---------- */
-
-/* Try direct first, then fall back to a CORS-relaying proxy.
-   Remembers whichever mode worked so later calls go straight there. */
-let workingMode = store.get('netmode', null);
-
-async function apiFetch(path, options = {}) {
-  const manual = (settings.proxy || '').trim();
-  const fallback = 'https://corsproxy.io/?url=';
-  let attempts;
-  if (manual) {
-    attempts = [manual];
-  } else if (workingMode !== null) {
-    attempts = [workingMode, '', fallback];
-  } else {
-    attempts = ['', fallback];
+function rows(el,lines,max){
+  el.innerHTML='';
+  if(!lines.length){el.innerHTML='<div class="msg">Nema nailazećih vozila.</div>';return}
+  for(const l of lines.slice(0,max)){
+    const a=l.arrivals[0],r=document.createElement('div');r.className='row';
+    r.innerHTML='<div class="bullet"></div><div class="dest"><b></b><small></small></div><div class="eta"><span></span><small></small></div>';
+    const b=r.querySelector('.bullet');b.textContent=l.number;b.style.background=color(l.number);
+    r.querySelector('b').textContent=l.title;
+    r.querySelector('.dest small').textContent=l.arrivals.length>1?'Zatim: '+l.arrivals.slice(1,3).map(x=>fmt(x.sec)).join(', '):'';
+    r.querySelector('.eta span').textContent=fmt(a.sec);
+    r.querySelector('.eta small').textContent=a.stops>0?a.stops+(a.stops==1?' stanica':' stanice'):'';
+    el.appendChild(r);
   }
-
-  const tried = new Set();
-  const errs = [];
-  for (const prefix of attempts) {
-    if (tried.has(prefix)) continue;
-    tried.add(prefix);
-    const target = prefix ? prefix + encodeURIComponent(path) : path;
-    const ctrl = new AbortController();
-    const kill = setTimeout(() => ctrl.abort(), 12000); // never hang forever
-    try {
-      const res = await fetch(target, Object.assign({}, options, { signal: ctrl.signal }));
-      clearTimeout(kill);
-      if (!res.ok) { errs.push((prefix || 'direct') + ' → HTTP ' + res.status); continue; }
-      if (prefix !== workingMode) { workingMode = prefix; store.set('netmode', workingMode); }
-      return res;
-    } catch (e) {
-      clearTimeout(kill);
-      const why = e && e.name === 'AbortError' ? 'timed out' : (e && e.message ? e.message : 'network/CORS');
-      errs.push((prefix || 'direct') + ' → ' + why);
-    }
-  }
-  throw new Error(errs.join(' | '));
 }
-
-function buslogicHeaders(city) {
-  return {
-    'X-Api-Authentication': city.apiKey,
-    // 'User-Agent: okhttp/4.10.0' is what the apps send; browsers forbid
-    // setting it — upstreams accept the request without it.
-  };
-}
-
-/* ---------- Belgrade V2 AES-256-CBC (WebCrypto) ---------- */
-
-function b64ToBytes(b64) {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
-function bytesToB64(bytes) {
-  let bin = '';
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-  return btoa(bin);
-}
-
-async function aesKey(city) {
-  const raw = b64ToBytes(city.encKey);
-  return crypto.subtle.importKey('raw', raw, { name: 'AES-CBC' }, false,
-    ['encrypt', 'decrypt']);
-}
-
-async function v2Encrypt(city, payloadObj) {
-  const key = await aesKey(city);
-  const iv = b64ToBytes(city.encIV);
-  const data = new TextEncoder().encode(JSON.stringify(payloadObj));
-  const encrypted = await crypto.subtle.encrypt({ name: 'AES-CBC', iv }, key, data);
-  return bytesToB64(new Uint8Array(encrypted));
-}
-
-async function v2Decrypt(city, body) {
-  let b64 = body;
-  try { b64 = decodeURIComponent(body); } catch { /* already plain base64 */ }
-  const key = await aesKey(city);
-  const iv = b64ToBytes(city.encIV);
-  const plain = await crypto.subtle.decrypt(
-    { name: 'AES-CBC', iv }, key, b64ToBytes(b64));
-  return JSON.parse(new TextDecoder().decode(plain));
-}
-
-/* ---------- upstream data ---------- */
-
-async function fetchStations(cityId) {
-  const city = CITIES[cityId];
-  const cacheKey = 'stations:' + cityId;
-  const cached = store.get(cacheKey, null);
-  if (cached && Date.now() - cached.time < STATIONS_CACHE_TTL) return cached.stations;
-
-  const res = await apiFetch(city.base + '/publicapi/v1/networkextended.php', {
-    method: 'POST',
-    headers: Object.assign({ 'Content-Type': 'application/json' }, buslogicHeaders(city)),
-    body: JSON.stringify({ action: 'get_cities_extended' }),
+function buildHome(){
+  const box=$('cards');box.innerHTML='';bodies=[];
+  if(!favs.length){box.innerHTML='<div class="msg">Još nema stanica.<br>Pritisni „＋ Dodaj“.</div>';return}
+  favs.forEach(f=>{
+    const c=document.createElement('div');c.className='card';c.innerHTML='<h2><b></b><span></span></h2><div class="body mut">učitavam…</div>';
+    c.querySelector('b').textContent=f.name;c.querySelector('span').textContent='#'+f.id;
+    c.onclick=()=>go('detail',f);box.appendChild(c);bodies.push(c.querySelector('.body'));
   });
-  const json = await res.json();
+  refreshHome();
+}
+function refreshHome(){favs.forEach((f,i)=>api(`/api/arrivals?city=${f.city}&uid=${encodeURIComponent(f.uid)}`)
+  .then(l=>rows(bodies[i],l,3)).catch(e=>{bodies[i].textContent='Greška: '+e.message}))}
 
-  // Same shape as bgpp's ParserV1: upstream `id` = uid used by the arrivals
-  // endpoint; `station_id` = public station id.
-  const stations = (json.stations || []).map((s) => ({
-    uid: String(s.id),
-    id: String(s.station_id).toUpperCase(),
-    name: s.name,
-    lat: Number(s.coordinates && s.coordinates.latitude) || 0,
-    lon: Number(s.coordinates && s.coordinates.longitude) || 0,
-  }));
-  store.set(cacheKey, { time: Date.now(), stations });
-  return stations;
+async function refreshDetail(){
+  const f=cur;if(!f)return;
+  try{
+    const lines=await api(`/api/arrivals?city=${f.city}&uid=${encodeURIComponent(f.uid)}`);
+    rows($('dlist'),lines,20);
+    const buses=lines.map(l=>({n:l.number,lat:l.arrivals[0].lat,lon:l.arrivals[0].lon})).filter(b=>b.lat);
+    mapState={svg:$('dmap'),c:f,sts:await stations(f.city),buses,sel:f};drawMap();
+  }catch(e){$('dlist').innerHTML='<div class="msg err"></div>';$('dlist').firstChild.textContent='Greška: '+e.message}
 }
 
-async function fetchArrivals(cityId, station) {
-  const city = CITIES[cityId];
-  let raw;
-  if (city.version === 2) {
-    const payload = { station_uid: station.uid, session_id: 'A' + Date.now() };
-    const encrypted = await v2Encrypt(city, payload);
-    const res = await apiFetch(city.base + '/publicapi/v2/api.php', {
-      method: 'POST',
-      headers: buslogicHeaders(city),
-      body: new URLSearchParams({ action: 'data_bulletin', base: encrypted }),
-    });
-    const body = await res.text();
-    const decrypted = await v2Decrypt(city, body);
-    raw = decrypted && decrypted.data;
-  } else {
-    const res = await apiFetch(
-      city.base + '/publicapi/v1/announcement/announcement.php' +
-      '?ibfm=TM000001&action=get_announcement_data&station_uid=' + encodeURIComponent(station.uid),
-      { headers: buslogicHeaders(city) });
-    raw = await res.json();
-  }
-
-  if (!Array.isArray(raw) || raw.length === 0 || raw[0].just_coordinates === '1') return [];
-
-  // Same grouping as bgpp's ParserV1 (iterate reversed so earliest comes first).
-  const lines = new Map();
-  for (let i = raw.length - 1; i >= 0; i--) {
-    const v = raw[i];
-    const veh = (v.vehicles && v.vehicles[0]) || {};
-    const arrival = {
-      etaSeconds: Number(v.seconds_left ?? 0),
-      etaStations: Number(v.stations_between ?? 0),
-      stationName: veh.station_name || 'Unknown',
-      garageNo: veh.garageNo || 'Unknown',
-      lat: Number(veh.lat ?? 0),
-      lon: Number(veh.lng ?? 0),
-    };
-    if (lines.has(v.line_number)) {
-      lines.get(v.line_number).arrivals.push(arrival);
-    } else {
-      lines.set(v.line_number, {
-        lineNumber: String(v.line_number),
-        lineName: v.line_title || '',
-        arrivals: [arrival],
-      });
-    }
-  }
-  const out = Array.from(lines.values());
-  out.forEach((l) => l.arrivals.sort((a, b) => a.etaSeconds - b.etaSeconds));
-  out.sort((a, b) => a.arrivals[0].etaSeconds - b.arrivals[0].etaSeconds);
-  return out;
+/* ---- mapa u stilu metro plana: svetla podloga, bele tačke sa crnim obodom, kružići sa brojem linije ---- */
+function drawMap(){
+  const {svg,c,sts,buses,sel,onPick}=mapState,W=640,H=440,K=111320,cos=Math.cos(c.lat*Math.PI/180);
+  const dist=p=>Math.hypot((p.lat-c.lat)*110540,(p.lon-c.lon)*K*cos);
+  let mpp=6;if(buses.length)mpp=Math.max(3,Math.max(...buses.map(dist))*1.25/(H/2));
+  mpp*=mult;
+  const X=p=>W/2+(p.lon-c.lon)*K*cos/mpp,Y=p=>H/2-(p.lat-c.lat)*110540/mpp;
+  const vis=sts.map((s,i)=>({s,i,d:dist(s)})).filter(o=>{const x=X(o.s),y=Y(o.s);return x>0&&x<W&&y>0&&y<H}).sort((a,b)=>a.d-b.d).slice(0,70);
+  let h='';
+  vis.forEach((o,k)=>{const s=o.s,x=X(s),y=Y(s),isSel=sel&&s.uid==sel.uid;
+    h+=`<g data-i="${o.i}" style="cursor:pointer"><circle cx="${x}" cy="${y}" r="${isSel?10:5}" fill="${isSel?'#000':'#fff'}" stroke="#000" stroke-width="2.5"/>`+
+       (k<28||isSel?`<text x="${x+(isSel?14:9)}" y="${y+4}" font-size="${isSel?14:11}" font-weight="${isSel?700:400}" paint-order="stroke" stroke="#f3efe6" stroke-width="3">${esc(s.name)}</text>`:'')+'</g>'});
+  buses.forEach(b=>{const x=X(b),y=Y(b);if(x<0||x>W||y<0||y>H)return;
+    h+=`<circle cx="${x}" cy="${y}" r="13" fill="${color(b.n)}" stroke="#fff" stroke-width="2.5"/><text x="${x}" y="${y+4.5}" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">${esc(b.n)}</text>`});
+  svg.innerHTML=h;
+  svg.onclick=e=>{const g=e.target.closest('[data-i]');if(g&&onPick)onPick(sts[g.dataset.i])};
 }
+document.querySelectorAll('.zoom button').forEach(b=>b.onclick=()=>{mult*=+b.dataset.z;if(mapState.svg)drawMap()});
 
-/* ---------- misc helpers ---------- */
-
-function normalize(s) {
-  return String(s).toLowerCase()
-    .replace(/[\u0106\u0107]/g, 'c').replace(/[\u010C\u010D]/g, 'c')
-    .replace(/[\u0160\u0161]/g, 's').replace(/[\u017D\u017E]/g, 'z')
-    .replace(/[\u0110\u0111]/g, 'dj');
+/* ---- dodavanje stanice ---- */
+function addFav(s){const city=$('city').value;
+  if(!favs.some(f=>f.city==city&&f.uid==s.uid)){favs.push({city,uid:s.uid,id:s.id,name:s.name});save()}go('home')}
+async function startAdd(){
+  const cs=await api('/api/cities');const old=$('city').value;
+  $('city').innerHTML=cs.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');if(old)$('city').value=old;
+  $('q').value='';$('res').hidden=true;loadAddMap();
 }
-
-function fmtEta(seconds) {
-  if (seconds <= 0) return 'ARRIVING';
-  if (seconds < 60) return '<1 MIN';
-  const m = Math.floor(seconds / 60);
-  return m + ' MIN';
+async function loadAddMap(pos){
+  try{const sts=await stations($('city').value);
+    const c=pos||{lat:sts.reduce((a,s)=>a+s.lat,0)/sts.length,lon:sts.reduce((a,s)=>a+s.lon,0)/sts.length};
+    mapState={svg:$('amap'),c,sts,buses:[],sel:null,onPick:addFav};drawMap();
+  }catch(e){$('amap').innerHTML=`<text x="20" y="40">${esc(e.message)}</text>`}
 }
+$('city').onchange=()=>{mult=1;loadAddMap()};
+$('q').oninput=async()=>{
+  const q=$('q').value.trim().toLowerCase(),box=$('res');if(!q){box.hidden=true;return}
+  const sts=await stations($('city').value);
+  const m=sts.filter(s=>s.name.toLowerCase().includes(q)||String(s.id).toLowerCase()==q).slice(0,30);
+  box.innerHTML='';box.hidden=!m.length;
+  m.forEach(s=>{const d=document.createElement('div');d.innerHTML='<b></b> <small></small>';d.firstChild.textContent=s.name;d.lastChild.textContent='#'+s.id;d.onclick=()=>addFav(s);box.appendChild(d)});
+};
+$('geo').onclick=()=>navigator.geolocation.getCurrentPosition(p=>{mult=1;loadAddMap({lat:p.coords.latitude,lon:p.coords.longitude})},
+  ()=>alert('Nema dozvole za lokaciju (treba https ili localhost).'));
 
-function distanceKm(a, b) {
-  const R = 6371, dLat = (b[0] - a[0]) * Math.PI / 180,
-    dLon = (b[1] - a[1]) * Math.PI / 180;
-  const h = Math.sin(dLat / 2) ** 2 +
-    Math.cos(a[0] * Math.PI / 180) * Math.cos(b[0] * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
-
-function fmtDist(km) {
-  if (km < 1) return Math.round(km * 1000) + ' m';
-  return km.toFixed(1) + ' km';
-}
-
-/* ============================================================
-   VIEWS + ROUTER
-   Routes:  #/                 home (pick a "line" / city)
-            #/<city>          stations in city
-            #/<city>/<id>     live departures board
-   ============================================================ */
-
-let refreshTimer = null;
-let countdownTimer = null;
-
-function clearTimers() {
-  clearInterval(refreshTimer);
-  clearInterval(countdownTimer);
-  refreshTimer = countdownTimer = null;
-}
-
-function setView(node) {
-  clearTimers();
-  app.innerHTML = '';
-  app.appendChild(node);
-  window.scrollTo(0, 0);
-}
-
-function errorNotice(err) {
-  const box = el('div', 'notice');
-  const title = el('strong', null, 'SIGNAL PROBLEM');
-  box.appendChild(title);
-  box.appendChild(el('br'));
-  const msg = el('span', null,
-    'Could not reach the upstream API. ' +
-    (settings.proxy
-      ? 'Check your CORS proxy prefix in settings (⚙). '
-      : 'The upstream may be down — or your browser blocked the cross-origin request. ' +
-        'Open settings (⚙) and try a CORS proxy prefix such as https://corsproxy.io/?url= — ') +
-    'Details: ' + (err && err.message ? err.message : err));
-  box.appendChild(msg);
-  return box;
-}
-
-/* ---------- home ---------- */
-
-function viewHome() {
-  const wrap = el('div');
-  wrap.appendChild(el('h2', 'view-title', 'Select a line — izaberi grad'));
-
-  const grid = el('div', 'city-grid');
-  for (const [id, city] of Object.entries(CITIES)) {
-    const tile = el('a', 'city-tile');
-    tile.href = '#/' + id;
-    tile.appendChild(bullet(city.bullet.text, city.bullet.color));
-    const mid = el('div');
-    mid.appendChild(el('div', 'city-name', city.name));
-    mid.appendChild(el('div', 'city-hint', city.hint));
-    tile.appendChild(mid);
-    tile.appendChild(el('span', 'city-arrow', '→'));
-    grid.appendChild(tile);
-  }
-  wrap.appendChild(grid);
-
-  // favorite stops across cities
-  const favEntries = Object.entries(favorites)
-    .flatMap(([cityId, ids]) => (ids || []).map((sid) => ({ cityId, sid })));
-  if (favEntries.length) {
-    const strip = el('div', 'fav-strip');
-    strip.appendChild(el('h2', 'view-title', '★ Favorite stops'));
-    const list = el('ul', 'station-list');
-    for (const f of favEntries) {
-      if (!CITIES[f.cityId]) continue;
-      const row = el('li', 'station-row');
-      row.appendChild(bullet(CITIES[f.cityId].bullet.text, CITIES[f.cityId].bullet.color));
-      const info = el('div');
-      info.appendChild(el('div', 'station-name', f.sid));
-      info.appendChild(el('div', 'station-meta', CITIES[f.cityId].name.toUpperCase() + ' · SAVED STOP'));
-      row.appendChild(info);
-      row.appendChild(el('span', 'station-go', '→'));
-      row.addEventListener('click', () => { location.hash = '#/' + f.cityId + '/' + encodeURIComponent(f.sid); });
-      list.appendChild(row);
-    }
-    strip.appendChild(list);
-    wrap.appendChild(strip);
-  }
-  setView(wrap);
-}
-
-/* ---------- city / station picker ---------- */
-
-async function viewCity(cityId) {
-  const city = CITIES[cityId];
-  if (!city) { location.hash = '#/'; return; }
-
-  const wrap = el('div');
-  wrap.appendChild(el('h2', 'view-title', city.name + ' — find your stop'));
-
-  const plaque = el('div', 'plaque');
-  plaque.appendChild(bullet(city.bullet.text, city.bullet.color));
-  const h = el('h1', null, city.name);
-  h.appendChild(el('span', 'plaque-sub', 'STATION SELECT · STANICA'));
-  plaque.appendChild(h);
-  wrap.appendChild(plaque);
-
-  const loading = el('div', 'loading-sign', 'LOADING STATIONS…');
-  wrap.appendChild(loading);
-  setView(wrap);
-
-  let stations;
-  try {
-    stations = await fetchStations(cityId);
-  } catch (err) {
-    loading.remove();
-    const back = el('a', 'btn btn-secondary btn-block', '← BACK');
-    back.href = '#/';
-    wrap.appendChild(errorNotice(err));
-    wrap.appendChild(back);
-    return;
-  }
-  loading.remove();
-
-  if (!stations.length) {
-    wrap.appendChild(el('div', 'empty-note', 'NO STATIONS REPORTED BY THE UPSTREAM API'));
-    return;
-  }
-
-  const searchWrap = el('div', 'search-wrap');
-  const input = el('input', 'search-input');
-  input.type = 'search';
-  input.placeholder = 'Search station — npr. "železnička"…';
-  input.setAttribute('aria-label', 'Search stations');
-  searchWrap.appendChild(input);
-  wrap.appendChild(searchWrap);
-
-  const list = el('ul', 'station-list');
-  wrap.appendChild(list);
-
-  const favs = favorites[cityId] || [];
-
-  function renderList() {
-    const q = normalize(input.value.trim());
-    let shown = stations.filter((s) => !q || normalize(s.name).includes(q));
-    if (geoPos) {
-      shown = shown.slice().sort((a, b) =>
-        distanceKm(geoPos, [a.lat, a.lon]) - distanceKm(geoPos, [b.lat, b.lon]));
-    } else {
-      shown = shown.slice().sort((a, b) => a.name.localeCompare(b.name, 'sr'));
-    }
-    list.innerHTML = '';
-    if (!shown.length) {
-      list.appendChild(el('div', 'empty-note', 'NO MATCHING STATIONS'));
-      return;
-    }
-    for (const s of shown.slice(0, 400)) {
-      const row = el('li', 'station-row');
-      row.appendChild(el('span', 'station-dot'));
-      const info = el('div');
-      info.appendChild(el('div', 'station-name', s.name));
-      const metaBits = [];
-      if (geoPos && s.lat) metaBits.push(fmtDist(distanceKm(geoPos, [s.lat, s.lon])) + ' AWAY');
-      metaBits.push('STOP ' + s.id);
-      info.appendChild(el('div', 'station-meta', metaBits.join(' · ')));
-      row.appendChild(info);
-
-      const favBtn = el('button', 'station-fav' + (favs.includes(s.id) ? ' on' : ''), '★');
-      favBtn.title = 'Save as favorite';
-      favBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const i = favs.indexOf(s.id);
-        if (i >= 0) { favs.splice(i, 1); toast('REMOVED FROM FAVORITES'); }
-        else { favs.push(s.id); toast('SAVED TO FAVORITES'); }
-        favorites[cityId] = favs;
-        store.set('favorites', favorites);
-        favBtn.classList.toggle('on', i < 0);
-      });
-      row.appendChild(favBtn);
-      row.appendChild(el('span', 'station-go', '→'));
-      row.addEventListener('click', () => {
-        location.hash = '#/' + cityId + '/' + encodeURIComponent(s.id);
-      });
-      list.appendChild(row);
-    }
-  }
-  input.addEventListener('input', renderList);
-  renderList();
-}
-
-/* ---------- departures board ---------- */
-
-function updateBoardClock(updatedAt) {
-  const clock = $('#board-clock');
-  if (!clock) return;
-  const elapsed = Math.floor((Date.now() - updatedAt) / 1000);
-  const left = Math.max(0, REFRESH_SECONDS - elapsed);
-  const t = new Date(updatedAt);
-  const pad = (n) => String(n).padStart(2, '0');
-  clock.textContent = 'UPDATED ' + pad(t.getHours()) + ':' + pad(t.getMinutes()) + ':' + pad(t.getSeconds()) +
-    ' · NEXT IN ' + left + 's';
-}
-
-async function loadBoard(cityId, station, board, stationNameEl) {
-  const head = board.querySelector('.board-body');
-  let lines;
-  try {
-    lines = await fetchArrivals(cityId, station);
-  } catch (err) {
-    head.innerHTML = '';
-    head.appendChild(errorNotice(err));
-    return;
-  }
-  head.innerHTML = '';
-  stationNameEl.textContent = station.name;
-
-  if (!lines.length) {
-    head.appendChild(el('div', 'board-empty',
-      'NO DEPARTURES AT THIS TIME\nCHECK BACK SOON'));
-    return;
-  }
-  for (const line of lines) {
-    const row = el('div', 'dep-row');
-    row.appendChild(bullet(line.lineNumber, lineColor(line.lineNumber)));
-    const info = el('div', 'dep-info');
-    info.appendChild(el('div', 'dep-line-name', line.lineName || ('LINE ' + line.lineNumber)));
-    const next = line.arrivals[0];
-    const bits = [];
-    if (next.etaStations > 0) bits.push(next.etaStations + (next.etaStations === 1 ? ' STOP' : ' STOPS') + ' AWAY');
-    if (next.stationName && next.stationName !== 'Unknown') bits.push('NEAR ' + next.stationName.toUpperCase());
-    if (next.garageNo && next.garageNo !== 'Unknown') bits.push('UNIT ' + next.garageNo);
-    if (bits.length) info.appendChild(el('div', 'dep-detail', bits.join(' · ')));
-    row.appendChild(info);
-
-    const etas = el('div', 'dep-etas');
-    const main = el('span', 'dep-eta-main' + (next.etaSeconds <= 45 ? ' arriving' : ''), fmtEta(next.etaSeconds));
-    etas.appendChild(main);
-    if (line.arrivals.length > 1) {
-      etas.appendChild(el('span', 'dep-eta-next',
-        'then ' + line.arrivals.slice(1, 3).map((a) => fmtEta(a.etaSeconds)).join(' · ')));
-    }
-    row.appendChild(etas);
-    head.appendChild(row);
-  }
-}
-
-async function viewStation(cityId, stationId) {
-  const city = CITIES[cityId];
-  if (!city) { location.hash = '#/'; return; }
-
-  const wrap = el('div');
-  wrap.appendChild(el('h2', 'view-title', city.name + ' — live departures'));
-
-  const plaque = el('div', 'plaque');
-  plaque.appendChild(bullet(city.bullet.text, city.bullet.color));
-  const h = el('h1');
-  const nameSpan = el('span', null, '…');
-  h.appendChild(nameSpan);
-  h.appendChild(el('span', 'plaque-sub', 'STOP ' + stationId + ' · ' + city.name.toUpperCase()));
-  plaque.appendChild(h);
-  wrap.appendChild(plaque);
-
-  const loading = el('div', 'loading-sign', 'FINDING STOP…');
-  wrap.appendChild(loading);
-  setView(wrap);
-
-  let station = null;
-  try {
-    const stations = await fetchStations(cityId);
-    station = stations.find((s) => s.id === stationId) ||
-              stations.find((s) => s.id === stationId.toUpperCase());
-  } catch (err) {
-    loading.remove();
-    wrap.appendChild(errorNotice(err));
-    const back = el('a', 'btn btn-secondary btn-block', '← ALL STATIONS');
-    back.href = '#/' + cityId;
-    wrap.appendChild(back);
-    return;
-  }
-  loading.remove();
-  if (!station) {
-    wrap.appendChild(el('div', 'empty-note', 'STOP NOT FOUND — IT MAY HAVE BEEN REMOVED FROM THE NETWORK'));
-    const back = el('a', 'btn btn-secondary btn-block', '← ALL STATIONS');
-    back.href = '#/' + cityId;
-    wrap.appendChild(back);
-    return;
-  }
-
-  const board = el('div', 'board');
-  const head = el('div', 'board-head');
-  head.appendChild(el('span', 'board-title', '◉ LIVE DEPARTURES'));
-  const clock = el('span', 'board-clock');
-  clock.id = 'board-clock';
-  head.appendChild(clock);
-  board.appendChild(head);
-  board.appendChild(el('div', 'board-body'));
-  wrap.appendChild(board);
-
-  const actions = el('div', 'board-actions');
-  const refreshBtn = el('button', 'btn', '↻ REFRESH');
-  const backBtn = el('a', 'btn btn-secondary', '← ALL STATIONS');
-  backBtn.href = '#/' + cityId;
-  actions.appendChild(refreshBtn);
-  actions.appendChild(backBtn);
-  wrap.appendChild(actions);
-
-  let updatedAt = 0;
-  const run = async () => {
-    await loadBoard(cityId, station, board, nameSpan);
-    updatedAt = Date.now();
-    updateBoardClock(updatedAt);
-  };
-  refreshBtn.addEventListener('click', run);
-  await run();
-  refreshTimer = setInterval(run, REFRESH_SECONDS * 1000);
-  countdownTimer = setInterval(() => updateBoardClock(updatedAt), 1000);
-}
-
-/* ---------- router ---------- */
-
-function route() {
-  const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean)
-    .map(decodeURIComponent);
-  if (!parts.length) return viewHome();
-  if (parts.length === 1) return viewCity(parts[0].toLowerCase());
-  return viewStation(parts[0].toLowerCase(), parts[1].toUpperCase());
-}
-
-/* ---------- settings modal ---------- */
-
-const modal = $('#modal');
-$('#btn-settings').addEventListener('click', () => {
-  $('#proxy-input').value = settings.proxy || '';
-  modal.classList.remove('hidden');
-});
-$('#btn-close-modal').addEventListener('click', () => {
-  settings.proxy = $('#proxy-input').value.trim();
-  store.set('settings', settings);
-  modal.classList.add('hidden');
-  toast(settings.proxy ? 'PROXY SAVED' : 'AUTO MODE — DIRECT, WITH FALLBACK');
-});
-modal.addEventListener('click', (e) => {
-  if (e.target === modal) $('#btn-close-modal').click();
-});
-$('#btn-clear-cache').addEventListener('click', () => {
-  Object.keys(CITIES).forEach((id) => localStorage.removeItem('stanica:stations:' + id));
-  toast('STATION CACHE CLEARED');
-});
-
-/* ---------- geolocation ---------- */
-
-const geoBtn = $('#btn-geo');
-function paintGeoBtn() { geoBtn.classList.toggle('active', !!geoPos); }
-geoBtn.addEventListener('click', () => {
-  if (!navigator.geolocation) { toast('GEOLOCATION NOT SUPPORTED'); return; }
-  toast('LOCATING…');
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      geoPos = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-      store.set('geopos', geoPos);
-      paintGeoBtn();
-      toast('LOCATION SAVED — STOPS SORTED BY DISTANCE');
-      route();
-    },
-    () => toast('COULD NOT GET LOCATION'),
-    { timeout: 8000 });
-});
-paintGeoBtn();
-
-window.addEventListener('hashchange', safeRoute);
-function safeRoute() {
-  try { route(); }
-  catch (e) {
-    app.innerHTML = '';
-    app.appendChild(errorNotice(e));
-  }
-}
-safeRoute();
-
-</script>
-</body>
-</html>
+go('home');if(!favs.length)go('add');
+</script></body></html>
