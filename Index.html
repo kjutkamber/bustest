@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Bus board</title>
+<style>
+  :root {
+    --bg: #000;
+    --fg: #fff;
+    --dim: #a7a9ac;
+    --rule: #3a3a3a;
+    --alert: #fccc0a;
+    font-family: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); }
+  body {
+    min-height: 100vh;
+    padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 0 16px 32px; }
+
+  header { padding: 20px 0 14px; border-bottom: 3px solid var(--fg); }
+  header h1 {
+    margin: 0; font-size: clamp(28px, 7vw, 44px); font-weight: 700;
+    letter-spacing: -0.02em; line-height: 1.05;
+  }
+  header .sub { margin: 6px 0 0; font-size: 15px; color: var(--dim); }
+
+  .row {
+    display: grid; grid-template-columns: 52px 1fr auto; gap: 14px;
+    align-items: center; padding: 14px 0; border-bottom: 1px solid var(--rule);
+  }
+  .bullet {
+    width: 48px; height: 48px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-weight: 700; font-size: 22px; letter-spacing: -0.03em;
+    color: #fff; background: #808183;
+  }
+  .bullet.long { font-size: 17px; }
+  .bullet.dark { color: #000; }
+  .dest { font-size: clamp(18px, 4.6vw, 24px); font-weight: 700; line-height: 1.15; }
+  .meta { font-size: 14px; color: var(--dim); margin-top: 3px; }
+  .eta { text-align: right; font-weight: 700; line-height: 1; white-space: nowrap; }
+  .eta .n { font-size: clamp(34px, 9vw, 48px); letter-spacing: -0.03em; }
+  .eta .u { font-size: 14px; font-weight: 400; color: var(--dim); margin-left: 4px; }
+  .eta.now .n { color: var(--alert); font-size: clamp(24px, 6.5vw, 32px); }
+
+  .empty { padding: 36px 0; font-size: 20px; line-height: 1.3; }
+  .empty small { display: block; margin-top: 8px; font-size: 15px; color: var(--dim); }
+
+  footer {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding-top: 16px; font-size: 14px; color: var(--dim);
+  }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+         background: #6cbe45; margin-right: 8px; }
+  .dot.bad { background: #ee352e; }
+  button, input {
+    font: inherit; color: var(--fg); background: transparent;
+    border: 1px solid var(--fg); border-radius: 999px; padding: 9px 16px;
+  }
+  button { cursor: pointer; }
+  button:hover { background: #1c1c1c; }
+  input { width: 100%; border-radius: 8px; padding: 13px 14px; font-size: 18px; border-color: var(--dim); }
+  button:focus-visible, input:focus-visible, .pick:focus-visible {
+    outline: 3px solid var(--alert); outline-offset: 2px;
+  }
+
+  .tools { display: flex; gap: 10px; margin: 16px 0 6px; }
+  .tools input { flex: 1; }
+  .pick {
+    display: block; width: 100%; text-align: left; border: 0; border-radius: 0;
+    border-bottom: 1px solid var(--rule); padding: 14px 2px; font-size: 18px;
+  }
+  .pick span { display: block; font-size: 13px; color: var(--dim); margin-top: 2px; }
+
+  .error { margin: 18px 0; padding: 14px; border-left: 6px solid #ee352e; background: #160606; line-height: 1.4; }
+  .error code { color: var(--alert); word-break: break-all; }
+  details { margin-top: 22px; color: var(--dim); font-size: 14px; }
+  details input { margin-top: 8px; font-size: 15px; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .dot { animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 50% { opacity: .35; } }
+  }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- Settings -----------------------------------------------------------
+  var CITY = "ns";                          // Novi Sad
+  var DEFAULT_API = /^https?:$/.test(location.protocol) ? location.origin : "https://bgpp.misa.st"; // same server when hosted next to the API
+  var REFRESH_MS = 20000;                   // server caches arrivals for ~15 s; stay gentle
+  var MAX_ROWS = 8;
+
+  // MTA-style bullet colours; text colour chosen for contrast.
+  var PALETTE = [
+    ["#ee352e", "#fff"], ["#0039a6", "#fff"], ["#00933c", "#fff"], ["#ff6319", "#fff"],
+    ["#fccc0a", "#000"], ["#996633", "#fff"], ["#b933ad", "#fff"], ["#6cbe45", "#000"],
+    ["#00add0", "#000"], ["#808183", "#fff"]
+  ];
+
+  // ---- Storage (private, per browser) ------------------------------------
+  function load(k, d) { try { var v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
+  function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+  var apiBase = load("api", DEFAULT_API).replace(/\/+$/, "");
+  var stationId = new URLSearchParams(location.search).get("station") || load("station", "");
+  var stationName = load("stationName", "");
+  var timer = null;
+
+  var app = document.getElementById("app");
+
+  // ---- Helpers -------------------------------------------------------------
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+  function norm(s) {
+    return String(s).toLowerCase().replace(/đ/g, "dj").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  }
+  function hashStr(s) { var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; }
+  function colorFor(line) { return PALETTE[hashStr(String(line)) % PALETTE.length]; }
+  function dist(a, b) {
+    var R = 6371000, r = Math.PI / 180;
+    var dLat = (b.lat - a.lat) * r, dLon = (b.lon - a.lon) * r;
+    var x = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(x));
+  }
+  async function getJSON(path) {
+    var res = await fetch(apiBase + path, { headers: { Accept: "application/json" } });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return res.json();
+  }
+  function clear() { if (timer) { clearInterval(timer); timer = null; } app.textContent = ""; }
+
+  // ---- Station picker ------------------------------------------------------
+  var stationsCache = null;
+
+  async function showPicker() {
+    clear();
+    var head = el("header");
+    head.appendChild(el("h1", "", "Pick your stop"));
+    head.appendChild(el("p", "sub", "Search by name, or sort by what is closest to you."));
+    app.appendChild(head);
+
+    var tools = el("div", "tools");
+    var input = el("input"); input.type = "search"; input.placeholder = "Station name"; input.setAttribute("aria-label", "Station name");
+    var near = el("button", "", "Near me");
+    tools.appendChild(input); tools.appendChild(near);
+    app.appendChild(tools);
+
+    var list = el("div"); app.appendChild(list);
+    var status = el("div", "empty", "Loading stations…"); list.appendChild(status);
+
+    try {
+      if (!stationsCache) stationsCache = await getJSON("/api/v2/cities/" + CITY + "/stations");
+    } catch (e) { return showError(e, showPicker); }
+
+    var here = null;
+    function render() {
+      var q = norm(input.value.trim());
+      var items = stationsCache.filter(function (s) { return !q || norm(s.name).indexOf(q) !== -1; });
+      if (here) {
+        items.forEach(function (s) { s._d = dist(here, s.coords); });
+        items.sort(function (a, b) { return a._d - b._d; });
+      } else {
+        items.sort(function (a, b) { return a.name.localeCompare(b.name); });
+      }
+      list.textContent = "";
+      if (!items.length) { list.appendChild(el("div", "empty", "No stop with that name.")); return; }
+      items.slice(0, 40).forEach(function (s) {
+        var b = el("button", "pick", s.name);
+        b.type = "button";
+        var sub = "Stop " + s.id + (here ? " · " + Math.round(s._d) + " m away" : "");
+        b.appendChild(el("span", "", sub));
+        b.addEventListener("click", function () {
+          stationId = s.id; stationName = s.name;
+          save("station", stationId); save("stationName", stationName);
+          showBoard();
+        });
+        list.appendChild(b);
+      });
+    }
+    input.addEventListener("input", render);
+    near.addEventListener("click", function () {
+      if (!navigator.geolocation) { near.textContent = "Not available"; return; }
+      near.textContent = "Locating…";
+      navigator.geolocation.getCurrentPosition(function (p) {
+        here = { lat: p.coords.latitude, lon: p.coords.longitude };
+        near.textContent = "Near me"; render();
+      }, function () { near.textContent = "Location blocked"; });
+    });
+    render();
+    input.focus();
+  }
+
+  // ---- Errors ---------------------------------------------------------------
+  function showError(e, retry) {
+    var box = el("div", "error");
+    box.appendChild(el("div", "", "Can't load bus data."));
+    var why = el("div", "meta");
+    why.appendChild(document.createTextNode("Tried "));
+    why.appendChild(el("code", "", apiBase));
+    why.appendChild(document.createTextNode(". If you are online, the API server probably blocks requests from web pages (CORS). Running your own copy of the API fixes that."));
+    box.appendChild(why);
+    var again = el("button", "", "Try again"); again.style.marginTop = "12px";
+    again.addEventListener("click", retry);
+    box.appendChild(again);
+    app.appendChild(box);
+    app.appendChild(settings());
+  }
+
+  function settings() {
+    var d = el("details");
+    d.appendChild(el("summary", "", "API address"));
+    var i = el("input"); i.value = apiBase; i.setAttribute("aria-label", "API address");
+    i.addEventListener("change", function () {
+      apiBase = i.value.trim().replace(/\/+$/, "") || DEFAULT_API;
+      save("api", apiBase); stationsCache = null;
+    });
+    d.appendChild(i);
+    return d;
+  }
+
+  // ---- Board -----------------------------------------------------------------
+  async function showBoard() {
+    if (!stationId) return showPicker();
+    clear();
+
+    var head = el("header");
+    var h1 = el("h1", "", stationName || ("Stop " + stationId));
+    var sub = el("p", "sub", "Next buses");
+    head.appendChild(h1); head.appendChild(sub);
+    app.appendChild(head);
+
+    var rows = el("div", "rows"); app.appendChild(rows);
+    rows.appendChild(el("div", "empty", "Loading…"));
+
+    var foot = el("footer");
+    var left = el("div");
+    var dot = el("span", "dot"); var when = el("span", "", "");
+    left.appendChild(dot); left.appendChild(when);
+    var change = el("button", "", "Change stop");
+    change.addEventListener("click", showPicker);
+    foot.appendChild(left); foot.appendChild(change);
+    app.appendChild(foot);
+    app.appendChild(settings());
+
+    async function refresh() {
+      try {
+        var data = await getJSON("/api/v2/cities/" + CITY + "/stations/" + encodeURIComponent(stationId) + "/arrivals");
+        if (data.station && data.station.name) { stationName = data.station.name; h1.textContent = stationName; save("stationName", stationName); }
+        var all = [];
+        (data.lines || []).forEach(function (line) {
+          (line.arrivals || []).forEach(function (a) { all.push({ line: line, a: a }); });
+        });
+        all.sort(function (x, y) { return x.a.etaSeconds - y.a.etaSeconds; });
+        rows.textContent = "";
+        if (!all.length) {
+          var e = el("div", "empty", "No buses on the way right now.");
+          e.appendChild(el("small", "", "This board refreshes by itself."));
+          rows.appendChild(e);
+        }
+        all.slice(0, MAX_ROWS).forEach(function (r) {
+          var row = el("div", "row");
+          var c = colorFor(r.line.lineNumber);
+          var b = el("div", "bullet" + (String(r.line.lineNumber).length > 2 ? " long" : "") , r.line.lineNumber);
+          b.style.background = c[0]; b.style.color = c[1];
+          var mid = el("div");
+          mid.appendChild(el("div", "dest", r.line.lineName || ("Line " + r.line.lineNumber)));
+          var st = r.a.etaStations;
+          var meta = st === 0 ? "At the stop" : (st === 1 ? "1 stop away" : st + " stops away");
+          mid.appendChild(el("div", "meta", meta));
+          var min = Math.round(r.a.etaSeconds / 60);
+          var eta = el("div", "eta" + (r.a.etaSeconds < 60 ? " now" : ""));
+          if (r.a.etaSeconds < 60) { eta.appendChild(el("span", "n", "Now")); }
+          else { eta.appendChild(el("span", "n", String(min))); eta.appendChild(el("span", "u", "min")); }
+          row.appendChild(b); row.appendChild(mid); row.appendChild(eta);
+          rows.appendChild(row);
+        });
+        dot.className = "dot";
+        when.textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      } catch (e) {
+        dot.className = "dot bad";
+        when.textContent = "Offline, retrying";
+        if (!rows.querySelector(".row")) { rows.textContent = ""; showErrorInline(rows, e); }
+      }
+    }
+    function showErrorInline(target, e) {
+      var box = el("div", "error");
+      box.appendChild(el("div", "", "Can't load bus data."));
+      var why = el("div", "meta");
+      why.appendChild(document.createTextNode("Tried "));
+      why.appendChild(el("code", "", apiBase));
+      why.appendChild(document.createTextNode(". If your connection is fine, the API probably blocks web pages from reading it (CORS). Running your own copy of the API fixes that."));
+      box.appendChild(why);
+      target.appendChild(box);
+    }
+
+    refresh();
+    timer = setInterval(refresh, REFRESH_MS);
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    // Pause polling while the tab is hidden to keep load on the API low.
+    if (document.hidden && timer) { clearInterval(timer); timer = "paused"; }
+    else if (!document.hidden && timer === "paused") { timer = null; showBoard(); }
+  });
+
+  showBoard();
+})();
+</script>
+</body>
+</html>
