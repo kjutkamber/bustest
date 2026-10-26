@@ -1,68 +1,109 @@
 <!DOCTYPE html>
 <html lang="sr"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#000"><title>Kad dolazi autobus</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#000"><title>Novi Sad – kad dolazi autobus</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
 <style>
+@font-face{font-family:Helv;src:url(Helvetica-Bold.ttf);font-weight:100 900}
 :root{--bg:#000;--fg:#fff;--mut:#9aa0a6;--row:#111;--line:#2a2a2a;--amber:#ffb000}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.3 "Helvetica Neue",Helvetica,Arial,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.3 Helv,"Helvetica Neue",Helvetica,Arial,sans-serif}
 .wrap{max-width:640px;margin:0 auto;padding:16px}
-select,input,button{background:var(--row);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:12px;font:inherit}
+input,button{background:var(--row);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:12px;font:inherit}
 button{cursor:pointer}input{flex:1;min-width:0}.bar{display:flex;gap:8px;margin-bottom:8px}
 header{display:flex;justify-content:space-between;align-items:center;padding:6px 0 10px;border-bottom:3px solid var(--fg);margin-bottom:6px;gap:8px}
 h1{font-size:24px;margin:0}small,.mut{color:var(--mut)}
 .card{border-bottom:1px solid var(--line);padding:14px 0;cursor:pointer}
-.card h2{font-size:18px;margin:0 0 8px;display:flex;justify-content:space-between}.card h2 span{color:var(--mut);font-weight:400;font-size:14px}
+.card h2{font-size:18px;margin:0 0 8px;display:flex;justify-content:space-between}.card h2 span{color:var(--mut);font-size:14px}
 .row{display:flex;align-items:center;gap:12px;padding:8px 0}
-.bullet{flex:none;min-width:40px;height:40px;border-radius:20px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;padding:0 8px;color:#fff}
+.bullet{flex:none;min-width:40px;height:40px;border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:18px;padding:0 8px;color:#fff}
 .dest{flex:1;min-width:0}.dest b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.eta{text-align:right;color:var(--amber);font-weight:700;font-size:26px;line-height:1}.eta small{display:block;font-size:12px;font-weight:400;margin-top:3px}
-.big .bullet{min-width:52px;height:52px;border-radius:26px;font-size:22px}.big .eta{font-size:34px}.big .row{padding:14px 0;border-bottom:1px solid var(--line)}
+.eta{text-align:right;color:var(--amber);font-size:26px;line-height:1}.eta small{display:block;font-size:12px;margin-top:3px}
+.big .row{padding:10px 0;border-bottom:1px solid var(--line)}
 .msg{color:var(--mut);padding:24px 0;text-align:center}.err{color:#ff6b6b}
 .res{background:var(--row);border:1px solid var(--line);border-radius:8px;margin-bottom:12px;max-height:240px;overflow:auto}
 .res div{padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer}
-.map{position:relative;margin-top:14px;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
-.map svg{display:block;width:100%;height:auto;background:#f3efe6}.map svg text{font-family:Helvetica,Arial,sans-serif}
-.zoom{position:absolute;right:8px;top:8px;display:flex;flex-direction:column;gap:6px}.zoom button{padding:6px 12px;background:#fff;color:#000}
+.map{height:60vh;margin-top:10px;border-radius:10px;border:1px solid var(--line);background:#e9e9e6}
+/* mapa preko celog ekrana */
+#detail{position:fixed;inset:0;z-index:5;background:#000}
+#dmap{position:absolute;inset:0;height:auto;margin:0;border:0;border-radius:0}
+.top{position:absolute;z-index:1001;left:0;right:0;top:env(safe-area-inset-top,0);display:flex;justify-content:space-between;padding:12px;pointer-events:none}.top button{pointer-events:auto}
+.sheet{position:absolute;z-index:1001;left:0;right:0;bottom:0;background:#000;border-radius:16px 16px 0 0;max-height:45vh;display:flex;flex-direction:column;padding:0 16px env(safe-area-inset-bottom,0)}
+.sheet header{cursor:pointer;margin:0;padding:14px 0 10px}.sheet h1{font-size:22px}
+#dlist{overflow:auto}#rnote{font-size:12px;margin:6px 0}.sheet.min #dlist,.sheet.min #rnote{display:none}
+.leaflet-container{font-family:Helv,Arial,sans-serif}
+.leaflet-tooltip.lbl{background:none;border:0;box-shadow:none;padding:0;color:#111;font:700 12px Helv,Arial,sans-serif;white-space:nowrap;text-shadow:-1px -1px #fff,1px -1px #fff,-1px 1px #fff,1px 1px #fff,0 0 5px #fff}
+.leaflet-tooltip.lbl:before{display:none}.leaflet-tooltip.sel{font-size:15px}.nolbl .lbl.perm{display:none}
+.dk .leaflet-tooltip.lbl{color:#fff;text-shadow:-1px -1px #000,1px -1px #000,-1px 1px #000,1px 1px #000,0 0 5px #000}.dk .map{background:#0b0b0b}.dk .leaflet-container{background:#0b0b0b}
+.top span{display:flex;gap:8px}.nonames .leaflet-tooltip.lbl{display:none}
+#set{position:fixed;inset:0;z-index:3000;background:#000b;display:flex;align-items:center;justify-content:center}#set[hidden]{display:none}
+#set .box{background:#111;border:1px solid var(--line);border-radius:14px;padding:20px;width:min(360px,90vw);display:flex;flex-direction:column;gap:14px}
+#set label{display:flex;gap:12px;align-items:center}#set input{flex:none;width:22px;height:22px;padding:0}.seg{display:flex;gap:8px}.seg button{flex:1}.seg .on{background:#fff;color:#000}
+.bus{width:30px;height:30px;border-radius:15px;border:2.5px solid #fff;color:#fff;font:700 13px Helv,Arial,sans-serif;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px #0006}
 </style></head><body><div class="wrap">
 
-<section id="home"><header><h1>Moje stanice</h1><button id="plus">＋ Dodaj</button></header><div id="cards"></div></section>
+<section id="home"><header><h1>Moje stanice</h1><span style="display:flex;gap:8px"><button id="gear">⚙️</button><button id="plus">＋ Dodaj</button></span></header><div id="cards"></div></section>
 
 <section id="add" hidden><header><h1>Dodaj stanicu</h1><button class="back">✕</button></header>
-<div class="bar"><select id="city"></select><input id="q" placeholder="Ime ili broj stanice…" autocomplete="off"><button id="geo">📍</button></div>
-<div id="res" class="res" hidden></div><div class="mut" style="font-size:14px">Ili dodirni stanicu na mapi:</div><div class="map"><svg id="amap" viewBox="0 0 640 440"></svg><div class="zoom"><button data-z="0.6">＋</button><button data-z="1.6">－</button></div></div></section>
-
-<section id="detail" hidden><header><button class="back">←</button><h1 id="dname" style="flex:1"></h1><button id="del">🗑</button></header>
-<div id="dlist" class="big"></div><div class="map"><svg id="dmap" viewBox="0 0 640 440"></svg><div class="zoom"><button data-z="0.6">＋</button><button data-z="1.6">－</button></div></div><p class="mut" style="font-size:12px">Mapa prikazuje stanice i trenutne pozicije vozila (ne i trasu linije).</p></section>
+<div class="bar"><input id="q" placeholder="Ime ili broj stanice…" autocomplete="off"><button id="geo">📍</button></div>
+<div id="res" class="res" hidden></div><div class="mut" style="font-size:14px">Ili dodirni stanicu na mapi:</div><div id="amap" class="map"></div></section>
 </div>
+
+<section id="detail" hidden>
+<div id="dmap" class="map"></div>
+<div class="top"><button class="back">←</button><span><button id="gear2">⚙️</button><button id="del">🗑</button></span></div>
+<div class="sheet" id="sheet"><header id="shead"><h1 id="dname"></h1><span id="chev" class="mut">▾</span></header><div id="dlist" class="big"></div><p id="rnote" class="mut"></p></div>
+</section>
+
+<div id="set" hidden><div class="box"><h1>Podešavanja</h1>
+<label><input type="checkbox" id="sst"> Prikaži stanice na mapi</label>
+<label><input type="checkbox" id="snm"> Prikaži imena stanica</label>
+<div class="mut">Tema mape</div><div class="seg"><button id="tdark">Crna</button><button id="tlight">Svetla</button></div>
+<button id="sclose">Gotovo</button></div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script>
-const API='https://nycbus.stevan-gajinov5.workers.dev'; // za telefon/GitHub Pages: ovde stavi adresu Workera, npr. 'https://bus.ime.workers.dev'
+const API='https://nycbus.stevan-gajinov5.workers.dev',CITY='ns';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const COLORS=['#0039a6','#ff6319','#6cbe45','#b933ad','#ee352e','#00933c','#00add0','#996633','#6d6e71'];
+const COLORS=['#0039a6','#ff6319','#6cbe45','#b933ad','#ee352e','#00933c','#00add0','#996633','#fccc0a','#e6007e','#1b998b','#7a5195','#f2542d','#3a86ff'];
 const color=n=>{let h=0;for(const ch of String(n))h=(h*31+ch.charCodeAt(0))%997;return COLORS[h%COLORS.length]};
 const fmt=s=>s<60?'sad':Math.round(s/60)+' min';
 const api=async p=>{const r=await fetch(API+p);const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j};
-const ST={};const stations=async c=>ST[c]||(ST[c]=await api('/api/stations?city='+c));
-let favs=[];try{favs=JSON.parse(localStorage.favs||'[]')}catch{}
+let ST;const stations=async()=>ST||(ST=await api('/api/stations?city='+CITY));
+let favs=[];try{favs=JSON.parse(localStorage.favs||'[]').filter(f=>(f.city||CITY)==CITY)}catch{}
 const save=()=>localStorage.favs=JSON.stringify(favs);
-let cur=null,timer,mult=1,mapState={},bodies=[];
+let cur=null,timer,bodies=[],active=null,dark=localStorage.mapDark!='0',S={};try{S=JSON.parse(localStorage.set||'{}')}catch{}
+let showSt=S.st!==false,showNm=S.nm!==false;
 
 function go(v,f){
-  cur=f||null;mult=1;clearInterval(timer);
+  cur=f||null;active=null;clearInterval(timer);
   ['home','add','detail'].forEach(x=>$(x).hidden=x!=v);
+  const o=maps.dmap;if(o){o.fitted=false;o.routesFor=null;o.rfit=false;o.rlayer.clearLayers();o.layer.clearLayers()}
+  $('rnote').textContent='';
   if(v=='home'){buildHome();timer=setInterval(refreshHome,15000)}
-  if(v=='detail'){$('dname').textContent=f.name;refreshDetail();timer=setInterval(refreshDetail,15000)}
+  if(v=='detail'){$('dname').textContent=f.name;$('dlist').innerHTML='';refreshDetail();timer=setInterval(refreshDetail,15000)}
   if(v=='add')startAdd();
 }
 document.querySelectorAll('.back').forEach(b=>b.onclick=()=>go('home'));
 $('plus').onclick=()=>go('add');
-$('del').onclick=()=>{if(confirm('Ukloni stanicu?')){favs=favs.filter(f=>!(f.city==cur.city&&f.uid==cur.uid));save();go('home')}};
+$('shead').onclick=()=>{const s=$('sheet').classList.toggle('min');$('chev').textContent=s?'▴':'▾'};
+$('del').onclick=()=>{if(confirm('Ukloni stanicu?')){favs=favs.filter(f=>f.uid!=cur.uid);save();go('home')}};
 
-function rows(el,lines,max){
+const SEEN={};
+function smooth(k,lines){ // linija koja na tren nestane iz API-ja ostaje do 60 s
+  const now=Date.now(),m=SEEN[k]||(SEEN[k]={}),here=new Set();
+  lines.forEach(l=>{const id=l.number+'|'+l.title;here.add(id);m[id]={l,t:now}});
+  for(const id in m){if(here.has(id))continue;const {l,t}=m[id],el=(now-t)/1000;
+    if(el>60){delete m[id];continue}
+    const arr=l.arrivals.map(a=>({...a,sec:a.sec-el})).filter(a=>a.sec>-30);
+    if(arr.length)lines.push({...l,arrivals:arr})}
+  return lines.sort((a,b)=>a.arrivals[0].sec-b.arrivals[0].sec);
+}
+function rows(el,lines,max,onclick){
   el.innerHTML='';
   if(!lines.length){el.innerHTML='<div class="msg">Nema nailazećih vozila.</div>';return}
   for(const l of lines.slice(0,max)){
     const a=l.arrivals[0],r=document.createElement('div');r.className='row';
+    if(onclick){r.style.cursor='pointer';r.onclick=()=>onclick(l)}if(active&&active!=l.number)r.style.opacity=.4;
     r.innerHTML='<div class="bullet"></div><div class="dest"><b></b><small></small></div><div class="eta"><span></span><small></small></div>';
     const b=r.querySelector('.bullet');b.textContent=l.number;b.style.background=color(l.number);
     r.querySelector('b').textContent=l.title;
@@ -82,62 +123,134 @@ function buildHome(){
   });
   refreshHome();
 }
-function refreshHome(){favs.forEach((f,i)=>api(`/api/arrivals?city=${f.city}&uid=${encodeURIComponent(f.uid)}`)
-  .then(l=>rows(bodies[i],l,3)).catch(e=>{bodies[i].textContent='Greška: '+e.message}))}
+function refreshHome(){favs.forEach((f,i)=>api(`/api/arrivals?city=${CITY}&uid=${encodeURIComponent(f.uid)}`)
+  .then(l=>rows(bodies[i],smooth('h'+f.uid,l),3)).catch(e=>{bodies[i].textContent='Greška: '+e.message}))}
 
 async function refreshDetail(){
   const f=cur;if(!f)return;
-  try{
-    const lines=await api(`/api/arrivals?city=${f.city}&uid=${encodeURIComponent(f.uid)}`);
-    rows($('dlist'),lines,20);
-    const buses=lines.map(l=>({n:l.number,lat:l.arrivals[0].lat,lon:l.arrivals[0].lon})).filter(b=>b.lat);
-    mapState={svg:$('dmap'),c:f,sts:await stations(f.city),buses,sel:f};drawMap();
+  try{const lines=smooth('d'+f.uid,await api(`/api/arrivals?city=${CITY}&uid=${encodeURIComponent(f.uid)}`));
+    if(cur!==f)return;rows($('dlist'),lines,20,pickLine);drawDetail(lines);
   }catch(e){$('dlist').innerHTML='<div class="msg err"></div>';$('dlist').firstChild.textContent='Greška: '+e.message}
 }
 
-/* ---- mapa u stilu metro plana: svetla podloga, bele tačke sa crnim obodom, kružići sa brojem linije ---- */
-function drawMap(){
-  const {svg,c,sts,buses,sel,onPick}=mapState,W=640,H=440,K=111320,cos=Math.cos(c.lat*Math.PI/180);
-  const dist=p=>Math.hypot((p.lat-c.lat)*110540,(p.lon-c.lon)*K*cos);
-  let mpp=6;if(buses.length)mpp=Math.max(3,Math.max(...buses.map(dist))*1.25/(H/2));
-  mpp*=mult;
-  const X=p=>W/2+(p.lon-c.lon)*K*cos/mpp,Y=p=>H/2-(p.lat-c.lat)*110540/mpp;
-  const vis=sts.map((s,i)=>({s,i,d:dist(s)})).filter(o=>{const x=X(o.s),y=Y(o.s);return x>0&&x<W&&y>0&&y<H}).sort((a,b)=>a.d-b.d).slice(0,70);
-  let h='';
-  vis.forEach((o,k)=>{const s=o.s,x=X(s),y=Y(s),isSel=sel&&s.uid==sel.uid;
-    h+=`<g data-i="${o.i}" style="cursor:pointer"><circle cx="${x}" cy="${y}" r="${isSel?10:5}" fill="${isSel?'#000':'#fff'}" stroke="#000" stroke-width="2.5"/>`+
-       (k<28||isSel?`<text x="${x+(isSel?14:9)}" y="${y+4}" font-size="${isSel?14:11}" font-weight="${isSel?700:400}" paint-order="stroke" stroke="#f3efe6" stroke-width="3">${esc(s.name)}</text>`:'')+'</g>'});
-  buses.forEach(b=>{const x=X(b),y=Y(b);if(x<0||x>W||y<0||y>H)return;
-    h+=`<circle cx="${x}" cy="${y}" r="13" fill="${color(b.n)}" stroke="#fff" stroke-width="2.5"/><text x="${x}" y="${y+4.5}" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">${esc(b.n)}</text>`});
-  svg.innerHTML=h;
-  svg.onclick=e=>{const g=e.target.closest('[data-i]');if(g&&onPick)onPick(sts[g.dataset.i])};
+/* ---- mapa: samo putevi (Esri svetlosiva podloga) ---- */
+const maps={};
+const ESRI='https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/';
+const tileUrl=()=>ESRI+(dark?'World_Dark_Gray_Base':'World_Light_Gray_Base')+'/MapServer/tile/{z}/{y}/{x}';
+function applyTheme(redraw){
+  document.body.classList.toggle('dk',dark);document.body.classList.toggle('nonames',!showNm);
+  Object.values(maps).forEach(o=>o.tl.setUrl(tileUrl()));
+  if(redraw&&cur&&maps.dmap&&!$('detail').hidden)drawRoutes();
 }
-document.querySelectorAll('.zoom button').forEach(b=>b.onclick=()=>{mult*=+b.dataset.z;if(mapState.svg)drawMap()});
+const saveS=()=>localStorage.set=JSON.stringify({st:showSt,nm:showNm});
+const seg=()=>{$('tdark').classList.toggle('on',dark);$('tlight').classList.toggle('on',!dark)};
+$('gear').onclick=$('gear2').onclick=()=>{$('sst').checked=showSt;$('snm').checked=showNm;seg();$('set').hidden=false};
+$('sclose').onclick=()=>$('set').hidden=true;
+$('sst').onchange=e=>{showSt=e.target.checked;saveS();applyTheme(true)};
+$('snm').onchange=e=>{showNm=e.target.checked;saveS();applyTheme()};
+$('tdark').onclick=()=>{dark=true;localStorage.mapDark='1';seg();applyTheme(true)};
+$('tlight').onclick=()=>{dark=false;localStorage.mapDark='0';seg();applyTheme(true)};
+function getMap(id,opt){
+  if(!maps[id]){
+    const m=L.map(id,opt||{}).setView([45.2671,19.8335],13);
+    const tl=L.tileLayer(tileUrl(),{maxNativeZoom:16,maxZoom:19,attribution:'Tiles © Esri, HERE, Garmin, OpenStreetMap contributors'}).addTo(m);
+    const hide=()=>m.getContainer().classList.toggle('nolbl',m.getZoom()<15);m.on('zoomend',hide);hide();
+    maps[id]={m,tl,rlayer:L.layerGroup().addTo(m),layer:L.layerGroup().addTo(m),fitted:false};
+  }
+  maps[id].m.invalidateSize();setTimeout(()=>maps[id].m.invalidateSize(),100);
+  return maps[id];
+}
+const dot=(s,sel)=>L.circleMarker([s.lat,s.lon],{radius:sel?9:5,color:'#000',weight:2.5,fillColor:sel?'#000':'#fff',fillOpacity:1});
+const label=(layer,name,cls)=>layer.bindTooltip(name,{permanent:true,direction:'right',offset:[8,0],className:'lbl perm '+(cls||'')});
+const busIcon=n=>L.divIcon({className:'',html:`<div class="bus" style="background:${color(n)}">${esc(n)}</div>`,iconSize:[30,30],iconAnchor:[15,15]});
+async function drawDetail(lines){
+  const f=cur,o=getMap('dmap',{zoomControl:false}),sts=await stations(),s=sts.find(x=>x.uid==f.uid);
+  if(!s||cur!==f)return;
+  o.lines=lines;o.sts=sts;o.layer.clearLayers();
+  o.sel=label(dot(s,1),s.name,'sel').addTo(o.layer);
+  const pts=[[s.lat,s.lon]];
+  lines.filter(l=>!active||l.number==active).forEach(l=>{const a=l.arrivals[0];if(a.lat){pts.push([a.lat,a.lon]);
+    L.marker([a.lat,a.lon],{icon:busIcon(l.number),zIndexOffset:500}).bindTooltip(l.title+' · '+fmt(a.sec)).addTo(o.layer)}});
+  if(!o.fitted){o.fitted=true;pts.length>1?o.m.fitBounds(pts,{paddingTopLeft:[40,70],paddingBottomRight:[40,innerHeight*.42],maxZoom:17}):o.m.setView(pts[0],16)}
+  if(o.routesFor!==f){o.routesFor=f;drawRoutes()}
+}
+function pickLine(l){active=active==l.number?null:l.number;const o=maps.dmap;o.rfit=false;rows($('dlist'),o.lines,20,pickLine);drawDetail(o.lines);drawRoutes()}
+
+/* ---- trase iz OpenStreetMap-a: jedan upit za ceo grad, više Overpass servera, keš 7 dana ---- */
+const OVP=['https://overpass-api.de/api/interpreter','https://overpass.private.coffee/api/interpreter','https://overpass.kumi.systems/api/interpreter'];
+async function overpass(q){
+  let err;
+  for(let round=0;round<3;round++){
+    for(const u of OVP){
+      try{const r=await fetch(u,{method:'POST',body:'data='+encodeURIComponent(q)});if(r.ok)return await r.json();err=new Error('Overpass '+r.status)}catch(e){err=e}
+    }
+    await new Promise(r=>setTimeout(r,2500*(round+1)));
+  }
+  throw err;
+}
+let RAW=null,rawP=null;const STOPS={};
+function loadRaw(sts){
+  if(RAW)return Promise.resolve(RAW);
+  if(rawP)return rawP;
+  return rawP=(async()=>{
+    try{const c=JSON.parse(localStorage.getItem('ns_routes_v3')||'null');if(c&&Date.now()-c.t<6048e5)return RAW=c.by}catch{}
+    const la=sts.map(s=>s.lat),lo=sts.map(s=>s.lon),bb=[Math.min(...la)-.04,Math.min(...lo)-.04,Math.max(...la)+.04,Math.max(...lo)+.04].join(',');
+    const j=await overpass(`[out:json][timeout:90];relation["route"~"^(bus|trolleybus)$"](${bb});out geom;`);
+    const by={},seen=new Set();
+    j.elements.forEach(e=>{const ref=e.tags&&e.tags.ref;if(!ref)return;by[ref]=by[ref]||[];
+      (e.members||[]).forEach(m=>{if(m.type!='way'||!m.geometry||/platform/.test(m.role))return;
+        const g=m.geometry.map(p=>[+p.lat.toFixed(5),+p.lon.toFixed(5)]),k=ref+'|'+g.length+'|'+g[0]+'|'+g[g.length-1];
+        if(!seen.has(k)){seen.add(k);by[ref].push(g)}})});
+    RAW=by;try{localStorage.setItem('ns_routes_v3',JSON.stringify({t:Date.now(),by}))}catch{}
+    return by;
+  })().finally(()=>{rawP=null});
+}
+function onRoute(s,g){const k=111320*Math.cos(s.lat*Math.PI/180);
+  for(let i=1;i<g.length;i++){
+    const ax=(g[i-1][1]-s.lon)*k,ay=(g[i-1][0]-s.lat)*110540,bx=(g[i][1]-s.lon)*k,by=(g[i][0]-s.lat)*110540,
+      dx=bx-ax,dy=by-ay,l=dx*dx+dy*dy,u=l?Math.max(0,Math.min(1,-(ax*dx+ay*dy)/l)):0;
+    if(Math.hypot(ax+u*dx,ay+u*dy)<35)return true}
+  return false}
+function routeOf(ref,sts){
+  const k=RAW[ref]?ref:ref.toUpperCase(),g=RAW[k]||[];
+  return {geoms:g,stops:STOPS[k]||(STOPS[k]=g.length?sts.filter(s=>g.some(w=>onRoute(s,w))).map(s=>s.uid):[])};
+}
+async function drawRoutes(){
+  const o=maps.dmap,f=cur,ls=o.lines.filter(l=>!active||l.number==active);
+  $('rnote').textContent='Učitavam trase…';
+  try{
+    await loadRaw(o.sts);if(cur!==f)return;
+    o.rlayer.clearLayers();const stops=new Set(),miss=[],all=[],R=ls.map(l=>routeOf(l.number,o.sts));
+    R.forEach((r,i)=>{if(!r.geoms.length)miss.push(ls[i].number);else r.stops.forEach(u=>stops.add(u))});
+    R.forEach(r=>r.geoms.forEach(g=>{all.push(...g);L.polyline(g,{color:dark?'#000':'#fff',weight:11,opacity:1,lineCap:'round',lineJoin:'round'}).addTo(o.rlayer)}));
+    R.forEach((r,i)=>r.geoms.forEach(g=>L.polyline(g,{color:color(ls[i].number),weight:6,opacity:1,lineCap:'round',lineJoin:'round'}).addTo(o.rlayer)));
+    if(showSt)o.sts.filter(x=>stops.has(x.uid)&&x.uid!=f.uid).forEach(x=>label(dot(x),x.name)
+      .on('click',()=>go('detail',{city:CITY,uid:x.uid,id:x.id,name:x.name})).addTo(o.rlayer));
+    if(o.sel)o.sel.bringToFront();
+    if(all.length&&!o.rfit){o.rfit=true;o.m.fitBounds(all,{paddingTopLeft:[30,70],paddingBottomRight:[30,innerHeight*.42]})}
+    $('rnote').textContent=miss.length?'Nema trase u OpenStreetMap-u za: '+[...new Set(miss)].join(', '):'';
+  }catch(e){$('rnote').textContent='Trase se ne mogu učitati: '+e.message}
+}
 
 /* ---- dodavanje stanice ---- */
-function addFav(s){const city=$('city').value;
-  if(!favs.some(f=>f.city==city&&f.uid==s.uid)){favs.push({city,uid:s.uid,id:s.id,name:s.name});save()}go('home')}
-async function startAdd(){
-  const cs=await api('/api/cities');const old=$('city').value;
-  $('city').innerHTML=cs.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');if(old)$('city').value=old;
-  $('q').value='';$('res').hidden=true;loadAddMap();
-}
+function addFav(s){if(!favs.some(f=>f.uid==s.uid)){favs.push({city:CITY,uid:s.uid,id:s.id,name:s.name});save()}go('home')}
+function startAdd(){$('q').value='';$('res').hidden=true;loadAddMap()}
 async function loadAddMap(pos){
-  try{const sts=await stations($('city').value);
-    const c=pos||{lat:sts.reduce((a,s)=>a+s.lat,0)/sts.length,lon:sts.reduce((a,s)=>a+s.lon,0)/sts.length};
-    mapState={svg:$('amap'),c,sts,buses:[],sel:null,onPick:addFav};drawMap();
-  }catch(e){$('amap').innerHTML=`<text x="20" y="40">${esc(e.message)}</text>`}
+  try{const sts=await stations(),o=getMap('amap');o.layer.clearLayers();
+    sts.forEach(s=>{const el=document.createElement('div');el.innerHTML='<b></b><br><button>＋ Dodaj</button>';
+      el.firstChild.textContent=s.name;el.lastChild.onclick=()=>addFav(s);
+      dot(s).bindPopup(el).bindTooltip(s.name,{className:'lbl',direction:'right',offset:[8,0]}).addTo(o.layer)});
+    if(pos){o.m.setView([pos.lat,pos.lon],16);L.circleMarker([pos.lat,pos.lon],{radius:7,color:'#fff',weight:3,fillColor:'#1a73e8',fillOpacity:1}).addTo(o.layer)}
+  }catch(e){alert('Mapa: '+e.message)}
 }
-$('city').onchange=()=>{mult=1;loadAddMap()};
 $('q').oninput=async()=>{
   const q=$('q').value.trim().toLowerCase(),box=$('res');if(!q){box.hidden=true;return}
-  const sts=await stations($('city').value);
-  const m=sts.filter(s=>s.name.toLowerCase().includes(q)||String(s.id).toLowerCase()==q).slice(0,30);
+  const m=(await stations()).filter(s=>s.name.toLowerCase().includes(q)||String(s.id).toLowerCase()==q).slice(0,30);
   box.innerHTML='';box.hidden=!m.length;
   m.forEach(s=>{const d=document.createElement('div');d.innerHTML='<b></b> <small></small>';d.firstChild.textContent=s.name;d.lastChild.textContent='#'+s.id;d.onclick=()=>addFav(s);box.appendChild(d)});
 };
-$('geo').onclick=()=>navigator.geolocation.getCurrentPosition(p=>{mult=1;loadAddMap({lat:p.coords.latitude,lon:p.coords.longitude})},
+$('geo').onclick=()=>navigator.geolocation.getCurrentPosition(p=>loadAddMap({lat:p.coords.latitude,lon:p.coords.longitude}),
   ()=>alert('Nema dozvole za lokaciju (treba https ili localhost).'));
 
-go('home');if(!favs.length)go('add');
+applyTheme();go('home');if(!favs.length)go('add');
 </script></body></html>
