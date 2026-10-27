@@ -5,19 +5,27 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
 <style>
 @font-face{font-family:Helv;src:url(Helvetica-Bold.ttf);font-weight:100 900}
-:root{--bg:#000;--fg:#fff;--mut:#9aa0a6;--row:#111;--line:#2a2a2a;--amber:#ffb000}
+:root{--bg:#000;--fg:#fff;--mut:#9aa0a6;--row:#111;--line:#2a2a2a;--amber:#ffb000;--live:#34c759}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.3 Helv,"Helvetica Neue",Helvetica,Arial,sans-serif}
 .wrap{max-width:640px;margin:0 auto;padding:16px}
 input,button{background:var(--row);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:12px;font:inherit}
 button{cursor:pointer}input{flex:1;min-width:0}.bar{display:flex;gap:8px;margin-bottom:8px}
 header{display:flex;justify-content:space-between;align-items:center;padding:6px 0 10px;border-bottom:3px solid var(--fg);margin-bottom:6px;gap:8px}
 h1{font-size:24px;margin:0}small,.mut{color:var(--mut)}
+.sync{font-size:12px;color:var(--mut);display:block;margin-top:3px}
+#hsync{padding:0 0 4px}
 .card{border-bottom:1px solid var(--line);padding:14px 0;cursor:pointer}
 .card h2{font-size:18px;margin:0 0 8px;display:flex;justify-content:space-between}.card h2 span{color:var(--mut);font-size:14px}
 .row{display:flex;align-items:center;gap:12px;padding:8px 0}
 .bullet{flex:none;min-width:40px;height:40px;border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:18px;padding:0 8px;color:#fff}
 .dest{flex:1;min-width:0}.dest b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .eta{text-align:right;color:var(--amber);font-size:26px;line-height:1}.eta small{display:block;font-size:12px;margin-top:3px}
+.row.idle .eta{color:var(--mut)}
+/* live-tracking indicator */
+.tr{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;vertical-align:middle;position:relative;top:-2px}
+.tr.on{background:var(--live);animation:pl 2s infinite}
+.tr.off{border:1.5px solid var(--mut)}
+@keyframes pl{0%{box-shadow:0 0 0 0 rgba(52,199,89,.7)}70%{box-shadow:0 0 0 7px rgba(52,199,89,0)}100%{box-shadow:0 0 0 0 rgba(52,199,89,0)}}
 .big .row{padding:10px 0;border-bottom:1px solid var(--line)}
 .msg{color:var(--mut);padding:24px 0;text-align:center}.err{color:#ff6b6b}
 .res{background:var(--row);border:1px solid var(--line);border-radius:8px;margin-bottom:12px;max-height:240px;overflow:auto}
@@ -35,13 +43,15 @@ h1{font-size:24px;margin:0}small,.mut{color:var(--mut)}
 .leaflet-tooltip.lbl:before{display:none}.leaflet-tooltip.sel{font-size:15px}.nolbl .lbl.perm{display:none}
 .dk .leaflet-tooltip.lbl{color:#fff;text-shadow:-1px -1px #000,1px -1px #000,-1px 1px #000,1px 1px #000,0 0 5px #000}.dk .map{background:#0b0b0b}.dk .leaflet-container{background:#0b0b0b}
 .top span{display:flex;gap:8px}.nonames .leaflet-tooltip.lbl{display:none}
-#set{position:fixed;inset:0;z-index:3000;background:#000b;display:flex;align-items:center;justify-content:center}#set[hidden]{display:none}
-#set .box{background:#111;border:1px solid var(--line);border-radius:14px;padding:20px;width:min(360px,90vw);display:flex;flex-direction:column;gap:14px}
-#set label{display:flex;gap:12px;align-items:center}#set input{flex:none;width:22px;height:22px;padding:0}.seg{display:flex;gap:8px}.seg button{flex:1}.seg .on{background:#fff;color:#000}
+.modal{position:fixed;inset:0;z-index:3000;background:#000b;display:flex;align-items:center;justify-content:center}.modal[hidden]{display:none}
+.modal .box{background:#111;border:1px solid var(--line);border-radius:14px;padding:20px;width:min(360px,90vw);display:flex;flex-direction:column;gap:14px}
+.modal label{display:flex;gap:12px;align-items:center}.modal input{flex:none;width:22px;height:22px;padding:0}.seg{display:flex;gap:8px}.seg button{flex:1}.seg .on{background:#fff;color:#000}
+#fl{max-height:40vh;overflow:auto;display:flex;flex-direction:column;gap:10px}
+#fl .bullet{min-width:34px;height:34px;font-size:15px}
 .bus{width:30px;height:30px;border-radius:15px;border:2.5px solid #fff;color:#fff;font:700 13px Helv,Arial,sans-serif;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px #0006}
 </style></head><body><div class="wrap">
 
-<section id="home"><header><h1>Moje stanice</h1><span style="display:flex;gap:8px"><button id="gear">⚙️</button><button id="plus">＋ Dodaj</button></span></header><div id="cards"></div></section>
+<section id="home"><header><h1>Moje stanice</h1><span style="display:flex;gap:8px"><button id="gear">⚙️</button><button id="plus">＋ Dodaj</button></span></header><div id="hsync" class="sync"></div><div id="cards"></div></section>
 
 <section id="add" hidden><header><h1>Dodaj stanicu</h1><button class="back">✕</button></header>
 <div class="bar"><input id="q" placeholder="Ime ili broj stanice…" autocomplete="off"><button id="geo">📍</button></div>
@@ -50,37 +60,57 @@ h1{font-size:24px;margin:0}small,.mut{color:var(--mut)}
 
 <section id="detail" hidden>
 <div id="dmap" class="map"></div>
-<div class="top"><button class="back">←</button><span><button id="gear2">⚙️</button><button id="del">🗑</button></span></div>
-<div class="sheet" id="sheet"><header id="shead"><h1 id="dname"></h1><span id="chev" class="mut">▾</span></header><div id="dlist" class="big"></div><p id="rnote" class="mut"></p></div>
+<div class="top"><button class="back">←</button><span><button id="fbtn">🚌 Linije</button><button id="gear2">⚙️</button><button id="del">🗑</button></span></div>
+<div class="sheet" id="sheet"><header id="shead"><div><h1 id="dname"></h1><small id="dsync" class="sync"></small></div><span id="chev" class="mut">▾</span></header><div id="dlist" class="big"></div><p id="rnote" class="mut"></p></div>
 </section>
 
-<div id="set" hidden><div class="box"><h1>Podešavanja</h1>
+<div id="set" class="modal" hidden><div class="box"><h1>Podešavanja</h1>
 <label><input type="checkbox" id="sst"> Prikaži stanice na mapi</label>
 <label><input type="checkbox" id="snm"> Prikaži imena stanica</label>
 <div class="mut">Tema mape</div><div class="seg"><button id="tdark">Crna</button><button id="tlight">Svetla</button></div>
 <button id="sclose">Gotovo</button></div></div>
+
+<div id="flt" class="modal" hidden><div class="box"><h1>Linije na stanici</h1>
+<div class="mut" style="font-size:14px">Ako ništa ne menjaš, prikazuju se sve linije.</div>
+<div id="fl"></div>
+<div class="seg"><button id="fall">Prikaži sve</button><button id="fclose">Gotovo</button></div></div></div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script>
-const API='https://nycbus.stevan-gajinov5.workers.dev',CITY='ns';
+const API='https://nycbus.stevan-gajinov5.workers.dev',CITY='ns',REFRESH=15000;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const COLORS=['#0039a6','#ff6319','#6cbe45','#b933ad','#ee352e','#00933c','#00add0','#996633','#fccc0a','#e6007e','#1b998b','#7a5195','#f2542d','#3a86ff'];
 const color=n=>{let h=0;for(const ch of String(n))h=(h*31+ch.charCodeAt(0))%997;return COLORS[h%COLORS.length]};
 const fmt=s=>s<60?'sad':Math.round(s/60)+' min';
+const agoTxt=s=>s<60?s+' s':Math.floor(s/60)+' min';
+const nat=(a,b)=>{const x=parseInt(a,10),y=parseInt(b,10);if(!isNaN(x)&&!isNaN(y)&&x!==y)return x-y;return a<b?-1:a>b?1:0};
 const api=async p=>{const r=await fetch(API+p);const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j};
 let ST;const stations=async()=>ST||(ST=await api('/api/stations?city='+CITY));
 let favs=[];try{favs=JSON.parse(localStorage.favs||'[]').filter(f=>(f.city||CITY)==CITY)}catch{}
-const save=()=>localStorage.favs=JSON.stringify(favs);
+const save=()=>{try{localStorage.favs=JSON.stringify(favs)}catch{}};
 let cur=null,timer,bodies=[],active=null,dark=localStorage.mapDark!='0',S={};try{S=JSON.parse(localStorage.set||'{}')}catch{}
 let showSt=S.st!==false,showNm=S.nm!==false;
+let lastOk=0,nextAt=0;
+
+/* ---- sync status: "Sinhronizovano pre X s · osvežavanje za Y s" ---- */
+function renderSync(){
+  let t;
+  if(!lastOk)t='Učitavam…';
+  else{const ago=Math.max(0,Math.round((Date.now()-lastOk)/1000)),left=Math.max(0,Math.ceil((nextAt-Date.now())/1000));
+    t='Sinhronizovano pre '+agoTxt(ago)+' · osvežavanje '+(left?'za '+left+' s':'…')}
+  $('hsync').textContent=$('dsync').textContent=t;
+}
+setInterval(renderSync,1000);
+function startTimer(fn){clearInterval(timer);nextAt=Date.now()+REFRESH;timer=setInterval(()=>{nextAt=Date.now()+REFRESH;fn()},REFRESH);renderSync()}
 
 function go(v,f){
-  cur=f||null;active=null;clearInterval(timer);
+  cur=f||null;active=null;clearInterval(timer);lastOk=0;
   ['home','add','detail'].forEach(x=>$(x).hidden=x!=v);
   const o=maps.dmap;if(o){o.fitted=false;o.routesFor=null;o.rfit=false;o.rlayer.clearLayers();o.layer.clearLayers()}
   $('rnote').textContent='';
-  if(v=='home'){buildHome();timer=setInterval(refreshHome,15000)}
-  if(v=='detail'){$('dname').textContent=f.name;$('dlist').innerHTML='';refreshDetail();timer=setInterval(refreshDetail,15000)}
+  if(v=='home'){buildHome();startTimer(refreshHome)}
+  if(v=='detail'){$('dname').textContent=f.name;$('dlist').innerHTML='';refreshDetail();startTimer(refreshDetail)}
   if(v=='add')startAdd();
 }
 document.querySelectorAll('.back').forEach(b=>b.onclick=()=>go('home'));
@@ -98,18 +128,45 @@ function smooth(k,lines){ // linija koja na tren nestane iz API-ja ostaje do 60 
     if(arr.length)lines.push({...l,arrivals:arr})}
   return lines.sort((a,b)=>a.arrivals[0].sec-b.arrivals[0].sec);
 }
+/* Obrada odgovora: pamti viđene linije, primenjuje filter stanice,
+   a za izabrane linije bez vozila uživo dodaje "idle" red. */
+const favOf=f=>favs.find(x=>x.uid==f.uid)||f;
+function prep(f0,key,raw){
+  const f=favOf(f0),now=Date.now();
+  f.known=f.known||[];f.seen=f.seen||{};
+  raw.forEach(l=>{if(f.known.indexOf(l.number)<0)f.known.push(l.number);f.seen[l.number]={t:now,title:l.title}});
+  if(favs.includes(f))save();
+  let lines=smooth(key,raw);
+  const sel=f.lines&&f.lines.length?f.lines:null;
+  if(sel){
+    lines=lines.filter(l=>sel.indexOf(l.number)>=0);
+    sel.forEach(n=>{if(!lines.some(l=>l.number==n)){const s=f.seen[n];
+      lines.push({number:n,title:s?s.title:'',arrivals:[],idle:true,seen:s?s.t:0})}});
+  }
+  return lines.sort((a,b)=>(!!a.idle-!!b.idle)||(a.idle?nat(a.number,b.number):a.arrivals[0].sec-b.arrivals[0].sec));
+}
 function rows(el,lines,max,onclick){
   el.innerHTML='';
   if(!lines.length){el.innerHTML='<div class="msg">Nema nailazećih vozila.</div>';return}
   for(const l of lines.slice(0,max)){
-    const a=l.arrivals[0],r=document.createElement('div');r.className='row';
-    if(onclick){r.style.cursor='pointer';r.onclick=()=>onclick(l)}if(active&&active!=l.number)r.style.opacity=.4;
+    const a=l.arrivals[0],live=!!(a&&a.lat&&a.lon),r=document.createElement('div');r.className='row'+(l.idle?' idle':'');
+    if(onclick){r.style.cursor='pointer';r.onclick=()=>onclick(l)}
     r.innerHTML='<div class="bullet"></div><div class="dest"><b></b><small></small></div><div class="eta"><span></span><small></small></div>';
     const b=r.querySelector('.bullet');b.textContent=l.number;b.style.background=color(l.number);
-    r.querySelector('b').textContent=l.title;
-    r.querySelector('.dest small').textContent=l.arrivals.length>1?'Zatim: '+l.arrivals.slice(1,3).map(x=>fmt(x.sec)).join(', '):'';
-    r.querySelector('.eta span').textContent=fmt(a.sec);
-    r.querySelector('.eta small').textContent=a.stops>0?a.stops+(a.stops==1?' stanica':' stanice'):'';
+    const sp=r.querySelector('.eta span'),sm=r.querySelector('.dest small');
+    if(l.idle){
+      r.querySelector('b').textContent=l.title||'Nema vozila uživo';
+      sm.textContent=(l.title?'Nema vozila uživo':'')+(l.seen?(l.title?' · ':'')+'viđeno pre '+agoTxt(Math.round((Date.now()-l.seen)/1000)):'');
+      sp.textContent='—';
+    }else{
+      r.querySelector('b').textContent=l.title;
+      sm.textContent=l.arrivals.length>1?'Zatim: '+l.arrivals.slice(1,3).map(x=>fmt(x.sec)).join(', '):'';
+      sp.textContent=fmt(a.sec);
+      const d=document.createElement('i');d.className='tr '+(live?'on':'off');d.title=live?'Prati se uživo':'Bez GPS signala';
+      sp.insertBefore(d,sp.firstChild);
+      r.querySelector('.eta small').textContent=a.stops>0?a.stops+(a.stops==1?' stanica':' stanice'):'';
+    }
+    if(active&&active!=l.number)r.style.opacity=.4;
     el.appendChild(r);
   }
 }
@@ -124,14 +181,38 @@ function buildHome(){
   refreshHome();
 }
 function refreshHome(){favs.forEach((f,i)=>api(`/api/arrivals?city=${CITY}&uid=${encodeURIComponent(f.uid)}`)
-  .then(l=>rows(bodies[i],smooth('h'+f.uid,l),3)).catch(e=>{bodies[i].textContent='Greška: '+e.message}))}
+  .then(raw=>{lastOk=Date.now();rows(bodies[i],prep(f,'h'+f.uid,raw),f.lines&&f.lines.length?f.lines.length:3)})
+  .catch(e=>{bodies[i].textContent='Greška: '+e.message}))}
 
 async function refreshDetail(){
   const f=cur;if(!f)return;
-  try{const lines=smooth('d'+f.uid,await api(`/api/arrivals?city=${CITY}&uid=${encodeURIComponent(f.uid)}`));
-    if(cur!==f)return;rows($('dlist'),lines,20,pickLine);drawDetail(lines);
+  try{const raw=await api(`/api/arrivals?city=${CITY}&uid=${encodeURIComponent(f.uid)}`);
+    if(cur!==f)return;lastOk=Date.now();
+    const lines=prep(f,'d'+f.uid,raw);
+    rows($('dlist'),lines,20,pickLine);drawDetail(lines);renderSync();
   }catch(e){$('dlist').innerHTML='<div class="msg err"></div>';$('dlist').firstChild.textContent='Greška: '+e.message}
 }
+
+/* ---- filter linija za stanicu ---- */
+function renderFlt(){
+  const f=favOf(cur),box=$('fl'),known=(f.known||[]).slice().sort(nat);
+  box.innerHTML='';
+  if(!known.length){box.innerHTML='<div class="mut">Još nije viđena nijedna linija. Pokušaj za koji trenutak.</div>';return}
+  const sel=f.lines&&f.lines.length?f.lines:known;
+  known.forEach(n=>{
+    const lab=document.createElement('label');lab.innerHTML='<input type="checkbox"><span class="bullet"></span>';
+    const cb=lab.firstChild,b=lab.lastChild;cb.checked=sel.indexOf(n)>=0;b.textContent=n;b.style.background=color(n);
+    cb.onchange=()=>{
+      const on=[...box.querySelectorAll('input')].map((c,i)=>c.checked?known[i]:null).filter(x=>x!==null);
+      f.lines=(on.length==known.length||!on.length)?[]:on; // sve ili ništa = sve linije
+      save();renderFlt();refreshDetail();
+    };
+    box.appendChild(lab);
+  });
+}
+$('fbtn').onclick=()=>{renderFlt();$('flt').hidden=false};
+$('fall').onclick=()=>{favOf(cur).lines=[];save();renderFlt();refreshDetail()};
+$('fclose').onclick=()=>$('flt').hidden=true;
 
 /* ---- mapa: samo putevi (Esri svetlosiva podloga) ---- */
 const maps={};
@@ -169,10 +250,10 @@ async function drawDetail(lines){
   o.lines=lines;o.sts=sts;o.layer.clearLayers();
   o.sel=label(dot(s,1),s.name,'sel').addTo(o.layer);
   const pts=[[s.lat,s.lon]];
-  lines.filter(l=>!active||l.number==active).forEach(l=>{const a=l.arrivals[0];if(a.lat){pts.push([a.lat,a.lon]);
+  lines.filter(l=>!active||l.number==active).forEach(l=>{const a=l.arrivals[0];if(a&&a.lat){pts.push([a.lat,a.lon]);
     L.marker([a.lat,a.lon],{icon:busIcon(l.number),zIndexOffset:500}).bindTooltip(l.title+' · '+fmt(a.sec)).addTo(o.layer)}});
   if(!o.fitted){o.fitted=true;pts.length>1?o.m.fitBounds(pts,{paddingTopLeft:[40,70],paddingBottomRight:[40,innerHeight*.42],maxZoom:17}):o.m.setView(pts[0],16)}
-  if(o.routesFor!==f){o.routesFor=f;drawRoutes()}
+  if(o.routesFor!==f||o.routeKey!==lines.map(l=>l.number).join()){o.routesFor=f;o.routeKey=lines.map(l=>l.number).join();drawRoutes()}
 }
 function pickLine(l){active=active==l.number?null:l.number;const o=maps.dmap;o.rfit=false;rows($('dlist'),o.lines,20,pickLine);drawDetail(o.lines);drawRoutes()}
 
