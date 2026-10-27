@@ -21,6 +21,9 @@ h1{font-size:24px;margin:0}small,.mut{color:var(--mut)}
 .dest{flex:1;min-width:0}.dest b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .eta{text-align:right;color:var(--amber);font-size:26px;line-height:1}.eta small{display:block;font-size:12px;margin-top:3px}
 .row.idle .eta{color:var(--mut)}
+.row.idle.sched .eta{color:var(--amber)}
+.sch{font-size:12px;color:var(--mut);margin-top:3px}
+.sch div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sch b{color:var(--fg)}
 /* live-tracking indicator */
 .tr{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;vertical-align:middle;position:relative;top:-2px}
 .tr.on{background:var(--live);animation:pl 2s infinite}
@@ -71,7 +74,7 @@ h1{font-size:24px;margin:0}small,.mut{color:var(--mut)}
 <button id="sclose">Gotovo</button></div></div>
 
 <div id="flt" class="modal" hidden><div class="box"><h1>Linije na stanici</h1>
-<div class="mut" style="font-size:14px">Ako ništa ne menjaš, prikazuju se sve linije.</div>
+<div class="mut" style="font-size:14px">Sve linije koje prolaze kroz stanicu (po OpenStreetMap-u, plus viđene uživo). Ako ništa ne menjaš, prikazuju se sve.</div>
 <div id="fl"></div>
 <div class="seg"><button id="fall">Prikaži sve</button><button id="fclose">Gotovo</button></div></div></div>
 
@@ -131,7 +134,8 @@ function smooth(k,lines){ // linija koja na tren nestane iz API-ja ostaje do 60 
 /* Obrada odgovora: pamti viđene linije, primenjuje filter stanice,
    a za izabrane linije bez vozila uživo dodaje "idle" red. */
 const favOf=f=>favs.find(x=>x.uid==f.uid)||f;
-function prep(f0,key,raw){
+const idleLine=(n,f)=>{const s=f.seen[n];return {number:n,title:s?s.title:'',arrivals:[],idle:true,seen:s?s.t:0,rel:(f.rel&&f.rel[n])||null}};
+function prep(f0,key,raw,all){
   const f=favOf(f0),now=Date.now();
   f.known=f.known||[];f.seen=f.seen||{};
   raw.forEach(l=>{if(f.known.indexOf(l.number)<0)f.known.push(l.number);f.seen[l.number]={t:now,title:l.title}});
@@ -140,10 +144,46 @@ function prep(f0,key,raw){
   const sel=f.lines&&f.lines.length?f.lines:null;
   if(sel){
     lines=lines.filter(l=>sel.indexOf(l.number)>=0);
-    sel.forEach(n=>{if(!lines.some(l=>l.number==n)){const s=f.seen[n];
-      lines.push({number:n,title:s?s.title:'',arrivals:[],idle:true,seen:s?s.t:0})}});
+    sel.forEach(n=>{if(!lines.some(l=>l.number==n))lines.push(idleLine(n,f))});
+  }else if(all&&f.pass){ // bez filtera: na detalju prikaži i sve linije koje prolaze, a nemaju vozilo uživo
+    f.pass.forEach(n=>{if(!lines.some(l=>l.number==n))lines.push(idleLine(n,f))});
   }
   return lines.sort((a,b)=>(!!a.idle-!!b.idle)||(a.idle?nat(a.number,b.number):a.arrivals[0].sec-b.arrivals[0].sec));
+}
+/* ---- red vožnje (polasci sa početne stanice) za linije bez vozila uživo ---- */
+const SCH={};
+const schedDay=()=>{const w=new Date(Date.now()-3*36e5).getDay();return w==0?'N':w==6?'S':'R'}; // noćni polasci pripadaju prethodnom danu
+const nowMin=()=>{const n=Date.now(),d=new Date(n-3*36e5);return Math.floor((n-new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime())/6e4)};
+const hhmm=t=>String(Math.floor(t/60)%24).padStart(2,'0')+':'+String(t%60).padStart(2,'0');
+function drawSched(el,data,r,l){
+  el.innerHTML='';const now=nowMin();
+  if(!data.dirs||!data.dirs.length){el.textContent='Nema polazaka po rasporedu za ovaj dan.'+(data.note?' ('+data.note+')':'');return}
+  const dirs=pickDirs(data.dirs,l||{});
+  const inTxt=m=>m<1?'sad':'za '+(m<60?m+' min':Math.floor(m/60)+' h '+m%60+' min');
+  if(dirs.length==1&&r){ // smer je poznat: jedan polazak, vreme desno kao kod linija uživo
+    const d=dirs[0],nx=d.times.find(t=>t>=now),sp=r.querySelector('.eta span'),es=r.querySelector('.eta small');
+    r.querySelector('.dest b').textContent=d.label||(l&&l.title)||('Linija '+(l?l.number:''));
+    r.querySelector('.dest small').textContent='Nema vozila uživo · po rasporedu'+(l&&l.seen?' · viđeno pre '+agoTxt(Math.round((Date.now()-l.seen)/1000)):'');
+    if(nx===undefined){sp.textContent='—';es.textContent=d.times.length?'sutra ~'+hhmm(d.times[0]):'nema polazaka';r.classList.remove('sched')}
+    else{const m=nx-now,dot=document.createElement('i');dot.className='tr off';dot.title='Po rasporedu, bez GPS-a';
+      sp.textContent=m<1?'sad':m<60?m+' min':Math.floor(m/60)+' h '+m%60+' min';sp.insertBefore(dot,sp.firstChild); // isto kao linija uživo (prazan krug = bez GPS-a)
+      es.textContent='polazak '+hhmm(nx)+' sa početne';r.classList.add('sched')}
+    return}
+  const h=document.createElement('div');h.textContent='Po rasporedu, sa početne stanice:';el.appendChild(h);
+  dirs.forEach(d=>{const nx=d.times.find(t=>t>=now),row=document.createElement('div');
+    if(nx===undefined)row.textContent='nema više polazaka danas · '+d.label;
+    else{const b=document.createElement('b');b.textContent=hhmm(nx);row.appendChild(b);
+      row.appendChild(document.createTextNode(' ('+inTxt(nx-now)+') · '+d.label))}
+    el.appendChild(row)});
+}
+function fillSched(el,num,r,l){
+  const day=schedDay(),k=num+'|'+day,c=SCH[k];
+  if(c&&c.data&&Date.now()-c.t<216e5)return drawSched(el,c.data,r,l);
+  if(c&&c.err&&Date.now()-c.t<3e5){el.textContent='Raspored nije dostupan ('+c.err+')';return}
+  el.textContent='Učitavam raspored…';
+  if(!c||!c.p){const p=api(`/api/schedule?city=${CITY}&line=${encodeURIComponent(num)}&day=${day}`)
+    .then(d=>{SCH[k]={data:d,t:Date.now()}}).catch(e=>{SCH[k]={err:e.message,t:Date.now()}});SCH[k]={p}}
+  SCH[k].p.then(()=>{if(el.isConnected)fillSched(el,num,r,l)});
 }
 function rows(el,lines,max,onclick){
   el.innerHTML='';
@@ -158,6 +198,7 @@ function rows(el,lines,max,onclick){
       r.querySelector('b').textContent=l.title||'Nema vozila uživo';
       sm.textContent=(l.title?'Nema vozila uživo':'')+(l.seen?(l.title?' · ':'')+'viđeno pre '+agoTxt(Math.round((Date.now()-l.seen)/1000)):'');
       sp.textContent='—';
+      const sc=document.createElement('div');sc.className='sch';r.querySelector('.dest').appendChild(sc);fillSched(sc,l.number,r,l);
     }else{
       r.querySelector('b').textContent=l.title;
       sm.textContent=l.arrivals.length>1?'Zatim: '+l.arrivals.slice(1,3).map(x=>fmt(x.sec)).join(', '):'';
@@ -181,23 +222,95 @@ function buildHome(){
   refreshHome();
 }
 function refreshHome(){favs.forEach((f,i)=>api(`/api/arrivals?city=${CITY}&uid=${encodeURIComponent(f.uid)}`)
-  .then(raw=>{lastOk=Date.now();rows(bodies[i],prep(f,'h'+f.uid,raw),f.lines&&f.lines.length?f.lines.length:3)})
+  .then(raw=>{lastOk=Date.now();rows(bodies[i],prep(f,'h'+f.uid,raw,!raw.length),f.lines&&f.lines.length?f.lines.length:3)})
   .catch(e=>{bodies[i].textContent='Greška: '+e.message}))}
 
 async function refreshDetail(){
   const f=cur;if(!f)return;
   try{const raw=await api(`/api/arrivals?city=${CITY}&uid=${encodeURIComponent(f.uid)}`);
     if(cur!==f)return;lastOk=Date.now();
-    const lines=prep(f,'d'+f.uid,raw);
+    const lines=prep(f,'d'+f.uid,raw,true);
     rows($('dlist'),lines,20,pickLine);drawDetail(lines);renderSync();
   }catch(e){$('dlist').innerHTML='<div class="msg err"></div>';$('dlist').firstChild.textContent='Greška: '+e.message}
 }
 
 /* ---- filter linija za stanicu ---- */
-function renderFlt(){
-  const f=favOf(cur),box=$('fl'),known=(f.known||[]).slice().sort(nat);
+/* linije koje prolaze kroz stanicu: trase iz OpenStreetMap-a koje prolaze na ≤35 m od stanice */
+/* BEGIN-DIR */
+/* ---- smer: koje relacije (smerovi) iz OpenStreetMap-a opslužuju stanicu ---- */
+const PV=3; // verzija pamćenih podataka o linijama po smeru (f.pv); povećaj da bi se stanice ponovo izračunale
+const LAT={а:'a',б:'b',в:'v',г:'g',д:'d',ђ:'dj',е:'e',ж:'z',з:'z',и:'i',ј:'j',к:'k',л:'l',љ:'lj',м:'m',н:'n',њ:'nj',о:'o',п:'p',р:'r',с:'s',т:'t',ћ:'c',у:'u',ф:'f',х:'h',ц:'c',ч:'c',ш:'s',џ:'dz'};
+const toks=s=>String(s||'').toLowerCase().replace(/[а-џ]/g,c=>LAT[c]||c).replace(/đ/g,'dj').normalize('NFD').replace(/[\u0300-\u036f]/g,'').split(/[^a-z0-9]+/).filter(Boolean).map(t=>({i:'1',ii:'2',iii:'3',iv:'4'}[t]||t));
+function sim(a,b){const A=toks(a),B=toks(b);if(!A.length||!B.length)return 0;
+  const one=(x,Y)=>Math.max(...Y.map(y=>x==y?1:(x.length>=3&&y.startsWith(x))||(y.length>=3&&x.startsWith(y))?.8:(x.length==1&&y[0]==x)||(y.length==1&&x[0]==y)?.4:0));
+  return (A.reduce((t,x)=>t+one(x,B),0)+B.reduce((t,y)=>t+one(y,A),0))/(A.length+B.length)}
+const ends=s=>{const p=String(s||'').split(/\s*(?:=>|->|→|⇒|➔|–|—)\s*|\s+-\s+/).map(x=>x.trim()).filter(Boolean);return p.length?{fr:p[0],to:p[p.length-1]}:{fr:'',to:''}};
+function relEnds(r){ // početak/kraj relacije: tagovi from/to, a ako ih nema, iz imena "Autobus 2: A => B"
+  let fr=r.fr||'',to=r.to||'';
+  if(!to){const p=ends(String(r.nm||'').replace(/^[^:]*:/,''));if(p.fr&&p.to&&p.fr!==p.to){fr=fr||p.fr;to=p.to}}
+  return {fr,to}}
+function pickDirs(dirs,l){ // od smerova iz rasporeda ostavi samo onaj koji odgovara stanici (ako je siguran)
+  if(dirs.length<2)return dirs;
+  const hints=(l.rel||[]).filter(r=>r.to).map(r=>[r.fr,r.to]);
+  if(l.title){const w=String(l.title).trim().split(/\s+/);if(w[0].toUpperCase()==String(l.number).toUpperCase())w.shift();
+    const e=ends(w.join(' '));if(e.to&&e.fr!==e.to)hints.push([e.fr,e.to])} // naslov viđenog vozila na ovoj stanici
+  if(!hints.length)return dirs;
+  const sc=dirs.map(d=>{const e=ends(d.label);return Math.max(...hints.map(h=>2*sim(h[1],e.to)+(h[0]&&e.fr?sim(h[0],e.fr):0)))});
+  const idx=sc.map((v,i)=>i).sort((a,b)=>sc[b]-sc[a]);
+  return sc[idx[0]]>=1.2&&sc[idx[0]]-sc[idx[1]]>=.8?[dirs[idx[0]]]:dirs}
+const dist=(s,p)=>Math.hypot((p[1]-s.lon)*111320*Math.cos(s.lat*Math.PI/180),(p[0]-s.lat)*110540);
+function servedBy(s,ref){ // relacije linije koje staju na ovoj stanici (stajalište ≤35 m, najbliže), ili samo po geometriji
+  const rs=(REL&&REL[ref])||[];if(!rs.length)return null;
+  const d=rs.map(r=>r.s.length?Math.min(...r.s.map(p=>dist(s,p))):Infinity),best=Math.min(...d);
+  if(best<=35)return {rels:rs.filter((r,i)=>d[i]<=best+6),exact:true};
+  const wd=g=>{let m=Infinity;for(let i=1;i<g.length;i++)m=Math.min(m,segD([s.lat,s.lon],g[i-1],g[i]));return m};
+  const nd=rs.map(r=>({r,d:r.w.length?Math.min(...r.w.map(i=>wd(WAYS[i]))):Infinity})).filter(x=>x.d<35);
+  if(!nd.length)return null;
+  const nb=Math.min(...nd.map(x=>x.d)); // suprotni smer na bulevaru je obično dalje od perona od smera kojem stanica pripada
+  return {rels:nd.filter(x=>x.d<=nb+8).map(x=>x.r),exact:false,geo:true}}
+function linesAt(s){const pass=[],rel={};
+  Object.keys(RAW).forEach(ref=>{const r=servedBy(s,ref);if(r){pass.push(ref);if(r.exact||r.geo)rel[ref]=r.rels.map(relEnds)}});
+  return {pass:pass.sort(nat),rel}}
+/* spajanje smerova na mapi: delovi druge relacije koji idu <22 m od već nacrtane (suprotna strana ulice) se izbacuju */
+const GC=.0004,gk=(x,y)=>x+','+y,MERGED={};
+const segD=(p,a,b)=>{const k=111320*Math.cos(p[0]*Math.PI/180),ax=(a[1]-p[1])*k,ay=(a[0]-p[0])*110540,bx=(b[1]-p[1])*k,by=(b[0]-p[0])*110540,
+  dx=bx-ax,dy=by-ay,l=dx*dx+dy*dy,u=l?Math.max(0,Math.min(1,-(ax*dx+ay*dy)/l)):0;return Math.hypot(ax+u*dx,ay+u*dy)};
+function gridAdd(grid,g){
+  for(let i=1;i<g.length;i++){const a=g[i-1],b=g[i],seg=[a,b],
+    n=Math.max(1,Math.ceil(Math.hypot((b[0]-a[0])*110540,(b[1]-a[1])*111320*Math.cos(a[0]*Math.PI/180))/20));
+    for(let j=0;j<=n;j++){const t=j/n,key=gk(Math.floor((a[0]+(b[0]-a[0])*t)/GC),Math.floor((a[1]+(b[1]-a[1])*t)/GC));
+      let c=grid.get(key);if(!c)grid.set(key,c=new Set());c.add(seg)}}}
+function gridNear(grid,p,m){const cx=Math.floor(p[0]/GC),cy=Math.floor(p[1]/GC);
+  for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++){const c=grid.get(gk(cx+i,cy+j));if(!c)continue;
+    for(const sg of c)if(segD(p,sg[0],sg[1])<m)return true}
+  return false}
+function drawGeoms(ref){
+  if(MERGED[ref])return MERGED[ref];
+  const grid=new Map(),out=[];
+  ((REL&&REL[ref])||[]).forEach(r=>{const mine=[];
+    r.w.forEach(i=>{const g=WAYS[i];let run=[];
+      for(let q=0;q<g.length;q++){
+        if(!gridNear(grid,g[q],22)){if(!run.length&&q>0)run.push(g[q-1]);run.push(g[q])}
+        else if(run.length){run.push(g[q]);if(run.length>1)mine.push(run);run=[]}
+      }
+      if(run.length>1)mine.push(run)});
+    mine.forEach(g=>gridAdd(grid,g));out.push(...mine)}); // dodaje se tek kad je cela relacija gotova
+  return MERGED[ref]=out}
+/* END-DIR */
+async function renderFlt(){
+  const f=favOf(cur),box=$('fl');
+  let note='';
+  if(!f.pass||f.pv!==PV){
+    box.innerHTML='<div class="mut">Tražim linije koje prolaze kroz stanicu…</div>';
+    try{const sts=await stations();await loadRaw(sts);const s=sts.find(x=>x.uid==f.uid);
+      if(s){const r=linesAt(s);f.pass=r.pass;f.rel=r.rel;f.pv=PV;save()}}
+    catch(e){note='Trase se ne mogu učitati ('+e.message+'); prikazane su samo linije viđene uživo.'}
+    if(cur===null||favOf(cur)!==f)return;
+  }
+  const known=[...new Set([...(f.known||[]),...(f.pass||[])])].sort(nat);
   box.innerHTML='';
-  if(!known.length){box.innerHTML='<div class="mut">Još nije viđena nijedna linija. Pokušaj za koji trenutak.</div>';return}
+  if(note)box.appendChild(Object.assign(document.createElement('div'),{className:'mut',textContent:note}));
+  if(!known.length){box.innerHTML='<div class="mut">Nijedna linija nije pronađena za ovu stanicu.</div>';return}
   const sel=f.lines&&f.lines.length?f.lines:known;
   known.forEach(n=>{
     const lab=document.createElement('label');lab.innerHTML='<input type="checkbox"><span class="bullet"></span>';
@@ -269,21 +382,34 @@ async function overpass(q){
   }
   throw err;
 }
-let RAW=null,rawP=null;const STOPS={};
+let RAW=null,REL=null,WAYS=[],rawP=null;const STOPS={};
+function indexRaw(c){ // c={ways:[[lat,lon]..], rels:[{ref,nm,fr,to,w:[indeksi],s:[[lat,lon]..]}]}
+  WAYS=c.ways;RAW={};REL={};
+  c.rels.forEach(r=>{(REL[r.ref]=REL[r.ref]||[]).push(r);
+    const a=RAW[r.ref]=RAW[r.ref]||[];r.w.forEach(i=>{if(!a.includes(WAYS[i]))a.push(WAYS[i])})});
+  return RAW}
 function loadRaw(sts){
   if(RAW)return Promise.resolve(RAW);
   if(rawP)return rawP;
   return rawP=(async()=>{
-    try{const c=JSON.parse(localStorage.getItem('ns_routes_v3')||'null');if(c&&Date.now()-c.t<6048e5)return RAW=c.by}catch{}
+    try{localStorage.removeItem('ns_routes_v3')}catch{}
+    try{const c=JSON.parse(localStorage.getItem('ns_routes_v4')||'null');if(c&&Date.now()-c.t<6048e5)return indexRaw(c.by)}catch{}
     const la=sts.map(s=>s.lat),lo=sts.map(s=>s.lon),bb=[Math.min(...la)-.04,Math.min(...lo)-.04,Math.max(...la)+.04,Math.max(...lo)+.04].join(',');
     const j=await overpass(`[out:json][timeout:90];relation["route"~"^(bus|trolleybus)$"](${bb});out geom;`);
-    const by={},seen=new Set();
-    j.elements.forEach(e=>{const ref=e.tags&&e.tags.ref;if(!ref)return;by[ref]=by[ref]||[];
-      (e.members||[]).forEach(m=>{if(m.type!='way'||!m.geometry||/platform/.test(m.role))return;
-        const g=m.geometry.map(p=>[+p.lat.toFixed(5),+p.lon.toFixed(5)]),k=ref+'|'+g.length+'|'+g[0]+'|'+g[g.length-1];
-        if(!seen.has(k)){seen.add(k);by[ref].push(g)}})});
-    RAW=by;try{localStorage.setItem('ns_routes_v3',JSON.stringify({t:Date.now(),by}))}catch{}
-    return by;
+    const ways=[],wk={},rels=[];
+    j.elements.forEach(e=>{const t=e.tags||{},ref=t.ref;if(!ref)return;const w=[],s=[];
+      (e.members||[]).forEach(m=>{
+        if(m.type=='node'&&m.lat!==undefined&&/stop|platform/.test(m.role||'')){s.push([+m.lat.toFixed(5),+m.lon.toFixed(5)]);return}
+        if(m.type!='way'||!m.geometry)return;
+        const g=m.geometry.map(p=>[+p.lat.toFixed(5),+p.lon.toFixed(5)]);
+        if(/platform/.test(m.role||'')){s.push(g[Math.floor(g.length/2)]);return} // peron kao površina: uzmi sredinu
+        const k=g.length+'|'+g[0]+'|'+g[g.length-1];
+        if(!(k in wk)){wk[k]=ways.length;ways.push(g)}
+        w.push(wk[k])});
+      rels.push({ref,nm:t.name||'',fr:t.from||'',to:t.to||'',w,s})});
+    const by={ways,rels};
+    try{localStorage.setItem('ns_routes_v4',JSON.stringify({t:Date.now(),by}))}catch{}
+    return indexRaw(by);
   })().finally(()=>{rawP=null});
 }
 function onRoute(s,g){const k=111320*Math.cos(s.lat*Math.PI/180);
@@ -294,17 +420,19 @@ function onRoute(s,g){const k=111320*Math.cos(s.lat*Math.PI/180);
   return false}
 function routeOf(ref,sts){
   const k=RAW[ref]?ref:ref.toUpperCase(),g=RAW[k]||[];
-  return {geoms:g,stops:STOPS[k]||(STOPS[k]=g.length?sts.filter(s=>g.some(w=>onRoute(s,w))).map(s=>s.uid):[])};
+  return {geoms:g,draw:g.length?drawGeoms(k):[],stops:STOPS[k]||(STOPS[k]=g.length?sts.filter(s=>g.some(w=>onRoute(s,w))).map(s=>s.uid):[])};
 }
 async function drawRoutes(){
   const o=maps.dmap,f=cur,ls=o.lines.filter(l=>!active||l.number==active);
   $('rnote').textContent='Učitavam trase…';
   try{
     await loadRaw(o.sts);if(cur!==f)return;
+    const F=favOf(f);
+    if(!F.pass||F.pv!==PV){const s0=o.sts.find(x=>x.uid==F.uid);if(s0){const r=linesAt(s0);F.pass=r.pass;F.rel=r.rel;F.pv=PV;save();refreshDetail()}} // linije koje prolaze → prikaži ih i bez vozila uživo
     o.rlayer.clearLayers();const stops=new Set(),miss=[],all=[],R=ls.map(l=>routeOf(l.number,o.sts));
     R.forEach((r,i)=>{if(!r.geoms.length)miss.push(ls[i].number);else r.stops.forEach(u=>stops.add(u))});
-    R.forEach(r=>r.geoms.forEach(g=>{all.push(...g);L.polyline(g,{color:dark?'#000':'#fff',weight:11,opacity:1,lineCap:'round',lineJoin:'round'}).addTo(o.rlayer)}));
-    R.forEach((r,i)=>r.geoms.forEach(g=>L.polyline(g,{color:color(ls[i].number),weight:6,opacity:1,lineCap:'round',lineJoin:'round'}).addTo(o.rlayer)));
+    R.forEach(r=>r.draw.forEach(g=>{all.push(...g);L.polyline(g,{color:dark?'#000':'#fff',weight:11,opacity:1,lineCap:'round',lineJoin:'round'}).addTo(o.rlayer)}));
+    R.forEach((r,i)=>r.draw.forEach(g=>L.polyline(g,{color:color(ls[i].number),weight:6,opacity:1,lineCap:'round',lineJoin:'round'}).addTo(o.rlayer)));
     if(showSt)o.sts.filter(x=>stops.has(x.uid)&&x.uid!=f.uid).forEach(x=>label(dot(x),x.name)
       .on('click',()=>go('detail',{city:CITY,uid:x.uid,id:x.id,name:x.name})).addTo(o.rlayer));
     if(o.sel)o.sel.bringToFront();
